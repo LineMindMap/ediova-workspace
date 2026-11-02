@@ -93,12 +93,14 @@ jobs:
       - name: Verify published page and built assets
         env:
           SITE_URL: ${{ steps.deployment.outputs.page_url }}
+          BUILD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           html_file="$(mktemp)"
+          html_url="${SITE_URL}?build=${BUILD_SHA}"
           ready=0
           for attempt in $(seq 1 12); do
-            code="$(curl --silent --show-error --location --output "$html_file" --write-out '%{http_code}' "$SITE_URL" || true)"
+            code="$(curl --silent --show-error --location -H 'Cache-Control: no-cache' --output "$html_file" --write-out '%{http_code}' "$html_url" || true)"
             if [ "$code" = "200" ] && grep -q '<div id="root"></div>' "$html_file"; then
               ready=1
               break
@@ -111,10 +113,14 @@ jobs:
             head -c 3000 "$html_file" || true
             exit 1
           fi
-          js_asset="$(grep -oE 'src="[^"]+[.]js"' "$html_file" | head -n1 | cut -d '"' -f2)"
-          css_asset="$(grep -oE 'href="[^"]+[.]css"' "$html_file" | head -n1 | cut -d '"' -f2)"
+          # Use sed to read the complete HTML stream. grep | head can exit non-zero
+          # under pipefail when head closes a pipe early.
+          js_asset="$(sed -nE 's/.*src="([^"]+[.]js)".*/\1/p' "$html_file" | sed -n '1p' || true)"
+          css_asset="$(sed -nE 's/.*href="([^"]+[.]css)".*/\1/p' "$html_file" | sed -n '1p' || true)"
           if [ -z "$js_asset" ] || [ -z "$css_asset" ]; then
             echo "Built JavaScript or CSS asset reference was missing from the deployed HTML."
+            echo "Served HTML (first 3000 bytes):"
+            head -c 3000 "$html_file" || true
             exit 1
           fi
           for asset in "$js_asset" "$css_asset"; do
@@ -123,7 +129,8 @@ jobs:
               /*) asset_url="${SITE_URL%/}$asset" ;;
               *) asset_url="${SITE_URL%/}/$asset" ;;
             esac
-            asset_code="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' "$asset_url" || true)"
+            asset_url="${asset_url}?build=${BUILD_SHA}"
+            asset_code="$(curl --silent --show-error --location -H 'Cache-Control: no-cache' --output /dev/null --write-out '%{http_code}' "$asset_url" || true)"
             echo "Asset $asset returned HTTP ${asset_code:-unknown}"
             if [ "$asset_code" != "200" ]; then
               echo "A required frontend asset is not being served: $asset_url"
@@ -135,6 +142,7 @@ jobs:
       - name: Verify browser renders the deployed app
         env:
           SITE_URL: ${{ steps.deployment.outputs.page_url }}
+          BUILD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           npm install --no-save --package-lock=false playwright
@@ -148,7 +156,9 @@ jobs:
             const pageErrors = [];
             page.on('pageerror', error => pageErrors.push(error.message));
 
-            const response = await page.goto(process.env.SITE_URL, {
+            const liveUrl = new URL(process.env.SITE_URL);
+            liveUrl.searchParams.set('build', process.env.BUILD_SHA);
+            const response = await page.goto(liveUrl.toString(), {
               waitUntil: 'networkidle',
               timeout: 60000,
             });
