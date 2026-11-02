@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://dummyhamza4200.github.io/ediova-workspace/sitemap.xml
+Sitemap: https://linemindmap.github.io/ediova-workspace/sitemap.xml
