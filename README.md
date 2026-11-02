@@ -78,10 +78,10 @@ Never publish a Supabase service-role key. Frontend Supabase keys are public; th
 
 ## Deployment
 
-The default public site is GitHub Pages:
-https://dummyhamza4200.github.io/ediova-workspace/
+The public site is hosted on GitHub Pages:
+https://linemindmap.github.io/ediova-workspace/
 
-GitHub Actions runs npm run build (type-check + Vite build) and deploys the dist output. The Vercel Git connection is not configured by this repository; it must be linked from a correctly authorized Vercel account if Vercel is preferred.
+GitHub Actions runs npm run build (type-check + Vite build) and publishes the dist output. The Pages deployment uses GitHub Actions, not a separate Vercel deployment.
 
 Ediova Inc.
 Jl. Kaluirang 14,5
