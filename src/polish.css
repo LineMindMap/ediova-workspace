@@ -1,0 +1,102 @@
+/* Ediova polish layer — refinements on top of the existing design. Loaded after styles.css. */
+:root{
+  --ease-out:cubic-bezier(.22,1,.36,1);
+  --ring:0 0 0 4px #2cae5024;
+  --shadow-sm:0 1px 2px #0f2a1708,0 4px 14px #0f2a170a;
+  --shadow-md:0 2px 6px #0f2a170a,0 18px 44px #0f2a1714;
+  --shadow-lg:0 6px 18px #0f2a170f,0 34px 80px #0f2a171f;
+}
+html{scroll-behavior:smooth;scroll-padding-top:90px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+::selection{background:#bfe88b;color:#173b25}
+
+/* Scroll progress */
+.scroll-progress{position:fixed;inset:0 0 auto 0;height:3px;z-index:100;transform-origin:0 50%;transform:scaleX(0);background:linear-gradient(90deg,#9bd43c,#2cae50 55%,#f6a51d);pointer-events:none;transition:transform .08s linear}
+
+/* Sticky frosted nav on the landing page */
+.landing .site-nav{position:sticky;top:0;z-index:30;margin:0 -5.6%;padding:0 5.6%;background:#f5faf2b8;-webkit-backdrop-filter:saturate(160%) blur(14px);backdrop-filter:saturate(160%) blur(14px);transition:box-shadow .3s var(--ease-out),background .3s,height .3s var(--ease-out)}
+.is-scrolled .landing .site-nav{background:#ffffffd9;box-shadow:0 10px 30px #0f2a170d}
+.site-nav nav>a{position:relative;transition:color .2s}
+.site-nav nav>a:after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:2px;border-radius:2px;background:var(--coral);transform:scaleX(0);transform-origin:left;transition:transform .35s var(--ease-out)}
+.site-nav nav>a:hover{color:var(--ink)}
+.site-nav nav>a:hover:after{transform:scaleX(1)}
+
+/* Buttons & links */
+.button{transition:transform .3s var(--ease-out),box-shadow .3s var(--ease-out),background .3s,filter .2s;will-change:transform}
+.button:hover{transform:translateY(-2px)}
+.button:active{transform:translateY(0) scale(.98);transition-duration:.08s}
+.button-dark{position:relative;overflow:hidden}
+.button-dark:after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 30%,#ffffff40 50%,transparent 70%);transform:translateX(-120%);transition:transform .7s var(--ease-out);pointer-events:none}
+.button-dark:hover:after{transform:translateX(120%)}
+.button svg,.text-link svg,.footer-contact svg{transition:transform .3s var(--ease-out)}
+.button:hover svg,.text-link:hover svg,.footer-contact>a:hover svg,.footer-contact>button:hover svg{transform:translateX(3px)}
+.text-link{transition:color .2s}
+.text-link:hover{color:#208b46}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #2cae50;outline-offset:3px;border-radius:8px}
+
+/* Inputs */
+input,textarea,select{transition:border-color .2s,box-shadow .25s var(--ease-out),background .2s}
+input:focus,textarea:focus,select:focus{box-shadow:var(--ring)}
+
+/* Hero */
+.hero h1{text-wrap:balance}
+.hero h1 span{background-size:200% 100%;animation:ediova-sheen 9s ease-in-out infinite alternate}
+.hero-copy p{text-wrap:pretty}
+.float-card{transition:transform .5s var(--ease-out),box-shadow .5s var(--ease-out)}
+.float-card:hover{box-shadow:var(--shadow-lg)}
+@keyframes ediova-sheen{from{background-position:0% 50%}to{background-position:100% 50%}}
+
+/* Cards: consistent depth and hover */
+.expertise-card,.metric-card,.task-card,.team-person-card,.login-card,.calendar-panel,.today-board{box-shadow:var(--shadow-sm)}
+.expertise-card{transition:transform .45s var(--ease-out),box-shadow .45s var(--ease-out),border-color .3s}
+.expertise-card:hover{transform:translateY(-6px);box-shadow:var(--shadow-md);border-color:#c8e3bd}
+.expertise-icon{transition:transform .6s var(--ease-out)}
+.expertise-card:hover .expertise-icon{transform:rotate(-8deg) scale(1.08)}
+.metric-card,.task-card,.team-person-card{transition:transform .35s var(--ease-out),box-shadow .35s var(--ease-out),border-color .25s}
+.metric-card:hover,.team-person-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.login-card{box-shadow:var(--shadow-lg)}
+
+/* Readability: lift the tiniest text sizes slightly */
+.expertise-card p,.expertise-heading p{font-size:13px;line-height:1.75}
+.expertise-card>span{font-size:9.5px}
+.expertise-card h3{font-size:17px}
+.company-footer-details span,.company-footer-details a{font-size:11px}
+.company-footer-details strong{font-size:12.5px}
+.footer-contact>a,.footer-contact>button{font-size:12px}
+.eyebrow{font-size:10.5px}
+
+/* Sidebar navigation */
+.sidebar .nav-item{transition:background .25s,color .2s,transform .25s var(--ease-out)}
+.sidebar .nav-item:not(.current):hover{background:#eef7e8;transform:translateX(2px)}
+
+/* Calendar */
+.calendar-day{transition:background .2s,box-shadow .25s}
+.calendar-day:not(.blank):hover{background:#f6fbf2}
+.calendar-event{transition:transform .2s var(--ease-out),filter .2s}
+.calendar-event:hover{transform:translateY(-1px);filter:brightness(.97)}
+
+/* Modals */
+.modal-backdrop,.confirm-backdrop,.reminder-popup-backdrop{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:ediova-fade .25s ease-out}
+.modal-backdrop>section,.confirm-backdrop>section,.reminder-popup-backdrop>section{animation:ediova-pop .4s var(--ease-out);box-shadow:var(--shadow-lg)}
+@keyframes ediova-fade{from{opacity:0}to{opacity:1}}
+@keyframes ediova-pop{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+
+/* Scroll reveal (only active when JS enables it and motion is allowed) */
+.polish-motion .reveal:not(.is-visible){opacity:0;translate:0 22px}
+.polish-motion .reveal.is-visible{animation:ediova-reveal .8s var(--ease-out) var(--reveal-delay,0ms) both}
+@keyframes ediova-reveal{from{opacity:0;translate:0 22px}to{opacity:1;translate:0 0}}
+
+/* Nicer scrollbars */
+*{scrollbar-width:thin;scrollbar-color:#b9d9ad transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:#c4dfb9;border-radius:10px;border:3px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:#9fcd8f;background-clip:content-box;border:3px solid transparent}
+
+@media (max-width:700px){
+  .landing .site-nav{margin:0 -5.6%}
+  .expertise-card p,.expertise-heading p{font-size:13.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}

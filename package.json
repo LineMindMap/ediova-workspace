@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "typecheck": "tsc --noEmit --jsx react-jsx --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM --strict --skipLibCheck src/vite-env.d.ts src/main.tsx src/App.tsx src/lib/supabase.ts",
+    "typecheck": "tsc --noEmit --jsx react-jsx --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM --strict --skipLibCheck src/vite-env.d.ts src/main.tsx src/App.tsx src/lib/supabase.ts src/lib/polish.ts",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 0.0.0.0"
   },
