@@ -21,6 +21,8 @@ type PaymentRequest = {
   hourly_rate_usd: number | string; late_deduction_usd: number | string;
   gross_amount_usd: number | string; deductions_usd: number | string; net_amount_usd: number | string;
   vat_amount_usd?: number | string; paid_amount?: number | string | null; paid_currency?: 'USD' | 'PKR' | null;
+  director_payment_amount_pkr?: number | string | null; director_payment_reason?: string | null;
+  director_payment_set_at?: string | null; director_payment_set_by?: string | null;
   bank_name: string; bank_account_holder: string; bank_account_number: string;
   work_breakdown: WorkItem[]; delay_breakdown: DelayItem[];
   revision_note: string | null; dispute_note: string | null; requested_at: string;
@@ -92,7 +94,7 @@ function BarcodeMark({ value }: { value: string }) {
   </svg>;
 }
 function EventLabel({ event }: { event: PaymentEvent }) {
-  const labels: Record<string, string> = { requested: 'Payment request submitted', resubmitted: 'Revised request submitted', disputed: 'Payment disputed', approved: 'Payment request approved', revision_requested: 'Revision requested', paid: 'Payment marked as paid' };
+  const labels: Record<string, string> = { requested: 'Payment request submitted', resubmitted: 'Revised request submitted', disputed: 'Payment disputed', approved: 'Payment request approved', payout_set: 'Director final payout updated', revision_requested: 'Revision requested', paid: 'Payment marked as paid' };
   return <div className="payment-timeline-item" key={event.id}>
     <span className={'payment-timeline-dot payment-dot-' + event.action} />
     <div><strong>{labels[event.action] || event.action}</strong><small>{event.actor_name} · {event.actor_role === 'managing_director' ? 'Managing Director' : 'Manager'} · {formatDateTime(event.created_at)}</small>{event.note && <p>{event.note}</p>}</div>
@@ -107,6 +109,8 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
   const bankName = request?.bank_name || '';
   const bankHolder = request?.bank_account_holder || '';
   const bankNumber = request?.bank_account_number || '';
+  const directorPayoutAmount = request?.director_payment_amount_pkr;
+  const invoiceCurrency = directorPayoutAmount != null || request?.paid_currency === 'PKR' ? 'PKR · Pakistani Rupee' : 'USD · US Dollar';
   const start = data.month_start;
   const periodText = formatMonth(start) + ' · ' + formatDay(start) + ' – ' + (request ? formatDay(new Date(Date.UTC(Number(start.slice(0,4)), Number(start.slice(5,7)), 0)).toISOString()) : formatDay(preview?.month_end));
   return <article className="payment-invoice" id="ediova-payment-invoice">
@@ -122,7 +126,7 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
       <div><span className="payment-eyebrow">ISSUED BY</span><strong>Ediova Inc.</strong><p>Jl. Kaliurang 14.5<br />Yogyakarta 55584, Indonesia</p></div>
       <div><span className="payment-eyebrow">PAYABLE TO</span><strong>{request?.manager_name_snapshot || managerName}</strong><p>Manager · Ediova<br />Bank: {bankName || 'Add bank details when requesting'}<br />Account holder: {bankHolder || '—'}<br />Account number: {bankNumber || '—'}</p></div>
     </div>
-    <div className="payment-invoice-period"><div><small>WORKING PERIOD</small><strong>{periodText}</strong></div><div><small>PAYMENT CURRENCY</small><strong>USD · US Dollar</strong></div><div><small>PAYMENT STATUS</small><strong>{request ? statusLabel(request.status) : 'Not yet submitted'}</strong></div></div>
+    <div className="payment-invoice-period"><div><small>WORKING PERIOD</small><strong>{periodText}</strong></div><div><small>PAYMENT CURRENCY</small><strong>{invoiceCurrency}</strong></div><div><small>PAYMENT STATUS</small><strong>{request ? statusLabel(request.status) : 'Not yet submitted'}</strong></div></div>
     <div className="payment-invoice-table-wrap"><table className="payment-invoice-table">
       <thead><tr><th>DESCRIPTION</th><th>QUANTITY</th><th>RATE</th><th className="payment-right">AMOUNT</th></tr></thead>
       <tbody>
@@ -133,7 +137,22 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
     </table></div>
     <div className="payment-invoice-summary">
       <div className="payment-performance-stamp"><ShieldCheck size={17} /><span><small>PERFORMANCE SCORE</small><strong>{quantity(data.performance_score)}<em>/100</em></strong></span></div>
-      <div className="payment-invoice-total"><div><span>Gross amount</span><strong>{amount(data.gross_amount_usd)}</strong></div><div><span>Late-task deductions</span><strong>−{amount(data.deductions_usd)}</strong></div><div><span>VAT · 0.00%</span><strong>{amount(request?.vat_amount_usd ?? 0)}</strong></div><div className="payment-net-total"><span>SYSTEM-SUGGESTED PAYMENT</span><strong>{amount(data.net_amount_usd)}</strong></div>{request?.paid_amount != null && request.paid_currency && <div className="payment-actual-paid-total"><span>DIRECTOR-RECORDED PAYMENT</span><strong>{payoutAmount(request.paid_amount, request.paid_currency)}</strong></div>}</div>
+      <div className="payment-invoice-total">
+        {directorPayoutAmount != null && <div className="payment-director-final-total">
+          <span>DIRECTOR-APPROVED FINAL PAYMENT · PKR</span>
+          <strong>{payoutAmount(directorPayoutAmount, 'PKR')}</strong>
+          <small>Primary payout amount set by the Managing Director</small>
+          {request?.director_payment_reason && <p><b>Director's reason:</b> {request.director_payment_reason}</p>}
+        </div>}
+        <div><span>Gross amount · USD</span><strong>{amount(data.gross_amount_usd)}</strong></div>
+        <div><span>Late-task deductions · USD</span><strong>−{amount(data.deductions_usd)}</strong></div>
+        <div><span>VAT · 0.00% · USD</span><strong>{amount(request?.vat_amount_usd ?? 0)}</strong></div>
+        <div className={directorPayoutAmount != null ? 'payment-net-total payment-system-reference-total' : 'payment-net-total'}>
+          <span>{directorPayoutAmount != null ? 'SYSTEM-SUGGESTED PAYMENT · USD' : 'SYSTEM-SUGGESTED PAYMENT'}</span>
+          <strong>{amount(data.net_amount_usd)}</strong>
+        </div>
+        {request?.paid_amount != null && request.paid_currency && <div className="payment-actual-paid-total"><span>ACTUAL TRANSFER RECORDED</span><strong>{payoutAmount(request.paid_amount, request.paid_currency)}</strong></div>}
+      </div>
     </div>
     <section className="payment-invoice-breakdown">
       <div className="payment-invoice-section-title"><div><span className="payment-eyebrow">01 · DELIVERY RECORD</span><h3>Completed work.</h3></div><span>{work.length} entries</span></div>
@@ -141,7 +160,7 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
       <div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">02 · TIMELINE REVIEW</span><h3>Delayed tasks.</h3></div><span>{delays.length} entries</span></div>
       {delays.length ? <div className="payment-work-list">{delays.map((item, index) => <div className="payment-work-row payment-delay-row" key={item.task_id || index}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>Deadline {formatDateTime(item.deadline_at)} · {quantity(item.delay_hours)} hours late</small></div><b>−{amount(data.late_deduction_usd)}</b></div>)}</div> : <p className="payment-muted">No task exceeded the 24-hour delay threshold.</p>}
     </section>
-    <div className="payment-invoice-footer"><div><strong>Thank you for your work.</strong><p>This statement records monthly work and the amount expected under Ediova’s payment policy. Payment is not automatic. The Managing Director reviews the request and records the transfer as paid after it has been sent.</p></div><div className="payment-invoice-seal"><BadgeCheck size={24} /><span>EDI OVA<br />ACCOUNTS</span></div></div>
+    <div className="payment-invoice-footer"><div><strong>Thank you for your work.</strong><p>This statement preserves the original USD work calculation and displays the Managing Director’s approved PKR payout as the primary amount when set. Payment is recorded as paid only after the transfer has been sent.</p></div><div className="payment-invoice-seal"><BadgeCheck size={24} /><span>EDI OVA<br />ACCOUNTS</span></div></div>
     <div className="payment-invoice-footnote"><span>EDI OVA INC. · INTERNAL PAYMENT DOCUMENT</span><span>{request?.invoice_number || 'PREVIEW'} · {formatMonth(start)}</span></div>
   </article>;
 }
@@ -167,10 +186,13 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const [monthStart, setMonthStart] = useState(previousMonthStart);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [modal, setModal] = useState<'request' | 'dispute' | 'revision' | 'payment' | null>(null);
+  const [modal, setModal] = useState<'request' | 'dispute' | 'revision' | 'payment' | 'approve' | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [paidAmountDraft, setPaidAmountDraft] = useState('');
-  const [paidCurrencyDraft, setPaidCurrencyDraft] = useState<'USD' | 'PKR'>('USD');
+  const [paidCurrencyDraft, setPaidCurrencyDraft] = useState<'USD' | 'PKR'>('PKR');
+  const [directorAmountPreset, setDirectorAmountPreset] = useState<'10000' | '12000' | '15000' | 'custom'>('10000');
+  const [directorAmountDraft, setDirectorAmountDraft] = useState('10000');
+  const [directorReasonDraft, setDirectorReasonDraft] = useState('');
   const [busyAction, setBusyAction] = useState(false);
 
   const director = profile?.role === 'managing_director';
@@ -346,7 +368,41 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     notify('Your dispute has been recorded for the Managing Director.');
     await refreshAfterAction();
   }
-  async function reviewRequest(action: 'approve' | 'request_revision', note?: string) {
+  function openFinalPayoutModal() {
+    const existingAmount = selectedRequest?.director_payment_amount_pkr;
+    setDirectorAmountPreset(existingAmount == null ? '10000' : 'custom');
+    setDirectorAmountDraft(String(existingAmount ?? 10000));
+    setDirectorReasonDraft(selectedRequest?.director_payment_reason || '');
+    setModal('approve');
+  }
+
+  async function approveRequest(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !selectedRequest || !director) return;
+    const finalAmount = Number(directorAmountDraft);
+    const reason = directorReasonDraft.trim();
+    if (!Number.isFinite(finalAmount) || finalAmount <= 0 || finalAmount > 9999999999.99 || Math.round(finalAmount * 100) !== finalAmount * 100) {
+      notify('Enter a valid final PKR amount with up to two decimal places.');
+      return;
+    }
+    if (reason.length < 5 || reason.length > 1200) {
+      notify('Add a reason of at least five characters for the final PKR amount.');
+      return;
+    }
+    setBusyAction(true);
+    const { error } = await supabase.rpc('approve_manager_payment_request', {
+      p_request_id: selectedRequest.id,
+      p_amount_pkr: finalAmount,
+      p_reason: reason
+    });
+    setBusyAction(false);
+    if (error) { notify('The final PKR amount could not be saved: ' + error.message); return; }
+    setModal(null);
+    notify('Final payout set to ' + payoutAmount(finalAmount, 'PKR') + ' and saved to the invoice.');
+    await refreshAfterAction();
+  }
+
+  async function reviewRequest(action: 'request_revision', note?: string) {
     if (!supabase || !selectedRequest) return;
     setBusyAction(true);
     const { error } = await supabase.rpc('review_manager_payment_request', {
@@ -358,7 +414,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     if (error) { notify('The payment status could not be updated: ' + error.message); return; }
     setModal(null);
     setNoteDraft('');
-    notify(action === 'approve' ? 'Payment request approved.' : 'Revision request sent to the Manager.');
+    notify('Revision request sent to the Manager.');
     await refreshAfterAction();
   }
   async function recordPayment(event: FormEvent) {
@@ -457,17 +513,18 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
         <aside className="payment-record-sidebar">
           <div className="payment-record-heading"><div><span className="payment-eyebrow">INVOICE REGISTER</span><h3>Payment records</h3></div><span>{requests.length}</span></div>
           {requests.length ? requests.map(request => <button className={'payment-record-row' + (selectedRequest?.id === request.id ? ' selected' : '')} key={request.id} onClick={() => setSelectedId(request.id)}>
-            <span className="payment-record-avatar">{request.manager_name_snapshot.split(/\s+/).map(part => part[0]).slice(0, 2).join('')}</span><span className="payment-record-copy"><strong>{request.manager_name_snapshot}</strong><small>{formatMonth(request.month_start)} · {request.invoice_number}</small><em className={'payment-status status-' + request.status}>{statusLabel(request.status)}</em></span><b>{amount(request.net_amount_usd)}</b>
+            <span className="payment-record-avatar">{request.manager_name_snapshot.split(/\s+/).map(part => part[0]).slice(0, 2).join('')}</span><span className="payment-record-copy"><strong>{request.manager_name_snapshot}</strong><small>{formatMonth(request.month_start)} · {request.invoice_number}</small><em className={'payment-status status-' + request.status}>{statusLabel(request.status)}</em></span><b>{request.status === 'paid' && request.paid_amount != null && request.paid_currency ? payoutAmount(request.paid_amount, request.paid_currency) : request.director_payment_amount_pkr != null ? payoutAmount(request.director_payment_amount_pkr, 'PKR') : amount(request.net_amount_usd)}</b>
           </button>) : <div className="payment-record-empty"><FileText size={22} /><strong>No payment requests yet.</strong><span>Submitted monthly invoices will appear here.</span></div>}
         </aside>
         <div className="payment-detail-column">
           {selectedRequest ? <><div className="payment-selected-toolbar"><div><span className="payment-eyebrow">SELECTED INVOICE</span><strong>{selectedRequest.invoice_number}</strong></div><div className="payment-toolbar-actions"><button type="button" className="payment-button payment-button-light" onClick={() => window.print()}><Printer size={15} /> Print invoice</button><button type="button" className="payment-button payment-button-danger" disabled={busyAction} onClick={() => void deleteRequest()}><Trash2 size={15} /> Delete invoice</button></div></div>
-            <div className="payment-review-summary"><span className={'payment-status status-' + selectedRequest.status}>{statusLabel(selectedRequest.status)}</span><strong>{amount(selectedRequest.net_amount_usd)}</strong><small>System-suggested payment · {selectedRequest.manager_name_snapshot}</small>{selectedRequest.paid_amount != null && selectedRequest.paid_currency && <small className="payment-actual-paid-label">Director recorded: {payoutAmount(selectedRequest.paid_amount, selectedRequest.paid_currency)}</small>}</div>
+            <div className="payment-review-summary"><span className={'payment-status status-' + selectedRequest.status}>{statusLabel(selectedRequest.status)}</span><strong>{selectedRequest.director_payment_amount_pkr != null ? payoutAmount(selectedRequest.director_payment_amount_pkr, 'PKR') : amount(selectedRequest.net_amount_usd)}</strong><small>{selectedRequest.director_payment_amount_pkr != null ? 'Director-approved final payout' : 'System-suggested payment'} · {selectedRequest.manager_name_snapshot}</small><small>System reference: {amount(selectedRequest.net_amount_usd)}</small>{selectedRequest.director_payment_reason && <small className="payment-actual-paid-label">Director's reason: {selectedRequest.director_payment_reason}</small>}{selectedRequest.paid_amount != null && selectedRequest.paid_currency && <small className="payment-actual-paid-label">Actual transfer: {payoutAmount(selectedRequest.paid_amount, selectedRequest.paid_currency)}</small>}</div>
             <InvoiceDocument request={selectedRequest} managerName={selectedRequest.manager_name_snapshot} />
             <div className="payment-review-actions">
-              {['requested', 'disputed'].includes(selectedRequest.status) && <button className="payment-button payment-button-primary" disabled={busyAction} onClick={() => void reviewRequest('approve')}><Check size={15} /> Approve request</button>}
+              {['requested', 'disputed'].includes(selectedRequest.status) && <button className="payment-button payment-button-primary" disabled={busyAction} onClick={openFinalPayoutModal}><Check size={15} /> Set final PKR amount &amp; approve</button>}
               {['requested', 'disputed', 'approved'].includes(selectedRequest.status) && <button className="payment-button payment-button-light" disabled={busyAction} onClick={() => { setNoteDraft(''); setModal('revision'); }}>Request revision</button>}
-              {selectedRequest.status === 'approved' && <button className="payment-button payment-button-paid" disabled={busyAction} onClick={() => { setPaidAmountDraft(''); setPaidCurrencyDraft('USD'); setModal('payment'); }}><BadgeCheck size={15} /> Record payment</button>}
+              {selectedRequest.status === 'approved' && <button className="payment-button payment-button-light" disabled={busyAction} onClick={openFinalPayoutModal}><Banknote size={15} /> {selectedRequest.director_payment_amount_pkr != null ? 'Edit final PKR amount' : 'Set final PKR amount'}</button>}
+              {selectedRequest.status === 'approved' && selectedRequest.director_payment_amount_pkr != null && <button className="payment-button payment-button-paid" disabled={busyAction} onClick={() => { setPaidAmountDraft(String(selectedRequest.director_payment_amount_pkr)); setPaidCurrencyDraft('PKR'); setModal('payment'); }}><BadgeCheck size={15} /> Record payment</button>}
             </div>
             <div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{selectedEvents.length ? selectedEvents.map(event => <EventLabel event={event} key={event.id} />) : <p className="payment-muted">No activity has been recorded.</p>}</div>
           </> : <div className="payment-empty"><FileText size={24} /><strong>Select a payment record.</strong><p>The invoice and its complete approval history will appear here.</p></div>}
@@ -476,7 +533,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
         <div className="payment-manager-main">
           {managerRequest ? <>
             <div className="payment-manager-status-card"><div><span className="payment-eyebrow">MONTHLY PAYMENT REQUEST</span><h3>{formatMonth(managerRequest.month_start)}</h3><p>{managerRequest.invoice_number}</p><small>{managerRequest.status === 'requested' ? 'Your request has been sent to the Managing Director.' : managerRequest.status === 'approved' ? 'The Managing Director approved your request. The transfer is awaiting confirmation.' : managerRequest.status === 'paid' ? 'The Managing Director has recorded this payment.' : managerRequest.status === 'revision_requested' ? 'Please review the requested changes and resubmit this same invoice.' : 'Your request is under review.'}</small></div><span className={'payment-status status-' + managerRequest.status}>{statusLabel(managerRequest.status)}</span></div>
-            {managerRequest.status === 'paid' && <div className="payment-paid-record"><div><span className="payment-eyebrow">SYSTEM-SUGGESTED</span><strong>{amount(managerRequest.net_amount_usd)}</strong></div><div><span className="payment-eyebrow">DIRECTOR-RECORDED PAYMENT</span><strong>{managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : 'Amount not recorded on this legacy invoice'}</strong></div></div>}
+            {managerRequest.status === 'paid' && <div className="payment-paid-record"><div className="payment-paid-main"><span className="payment-eyebrow">PAID · {formatMonth(managerRequest.month_start)}</span><strong>{managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : managerRequest.director_payment_amount_pkr != null ? payoutAmount(managerRequest.director_payment_amount_pkr, 'PKR') : 'Amount not recorded on this legacy invoice'}</strong><small>Director-approved amount: {managerRequest.director_payment_amount_pkr != null ? payoutAmount(managerRequest.director_payment_amount_pkr, 'PKR') : 'Not recorded'}</small>{managerRequest.director_payment_reason && <small>Reason: {managerRequest.director_payment_reason}</small>}</div><div><span className="payment-eyebrow">SYSTEM-SUGGESTED · USD REFERENCE</span><strong className="payment-secondary-amount">{amount(managerRequest.net_amount_usd)}</strong></div></div>}
             {managerRequest.revision_note && <div className="payment-inline-note"><AlertCircle size={16} /><div><strong>Revision requested</strong><p>{managerRequest.revision_note}</p></div></div>}
             {managerRequest.dispute_note && <div className="payment-inline-note"><AlertCircle size={16} /><div><strong>Your dispute</strong><p>{managerRequest.dispute_note}</p></div></div>}
             <div className="payment-invoice-actions"><button type="button" className="payment-button payment-button-primary" onClick={() => setHistoricalInvoiceId(historicalInvoiceId === managerRequest.id ? '' : managerRequest.id)}><FileText size={15} /> {historicalInvoiceId === managerRequest.id ? 'Hide full invoice' : 'View full invoice'}</button>
@@ -495,18 +552,18 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
             </div> : <div className="payment-empty"><AlertCircle size={20} /><strong>{previewError ? 'Monthly estimate is not available yet.' : 'Your estimate is being prepared.'}</strong><p>{previewError ? 'The payment period is the previous completed calendar month. The request becomes available from the first day of the new month.' : 'Complete and credited task hours will appear here.'}</p></div>}
             <div className="payment-bank-hint"><Banknote size={18} /><div><strong>Pakistani bank account</strong><p>When you request payment, add your bank name, account holder name, and account number. You can review the details on the invoice before submitting.</p></div></div>
           </>}
-          {historicalInvoice && historicalInvoice.id !== managerRequest?.id && <section className="payment-archive-panel"><div className="payment-selected-toolbar"><div><span className="payment-eyebrow">ARCHIVED INVOICE</span><strong>{historicalInvoice.invoice_number}</strong></div><button type="button" className="payment-button payment-button-light" onClick={() => setHistoricalInvoiceId('')}><X size={14} /> Close</button></div><div className="payment-review-summary"><span className={'payment-status status-' + historicalInvoice.status}>{statusLabel(historicalInvoice.status)}</span><strong>{amount(historicalInvoice.net_amount_usd)}</strong><small>{formatMonth(historicalInvoice.month_start)} · System-suggested payment</small>{historicalInvoice.paid_amount != null && historicalInvoice.paid_currency && <small className="payment-actual-paid-label">Director recorded: {payoutAmount(historicalInvoice.paid_amount, historicalInvoice.paid_currency)}</small>}</div><button type="button" className="payment-button payment-button-light" onClick={() => window.print()}><Printer size={15} /> Print invoice</button><InvoiceDocument request={historicalInvoice} managerName={profile.full_name} /><div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{events.filter(event => event.request_id === historicalInvoice.id).map(event => <EventLabel event={event} key={event.id} />)}</div></section>}
+          {historicalInvoice && historicalInvoice.id !== managerRequest?.id && <section className="payment-archive-panel"><div className="payment-selected-toolbar"><div><span className="payment-eyebrow">ARCHIVED INVOICE</span><strong>{historicalInvoice.invoice_number}</strong></div><button type="button" className="payment-button payment-button-light" onClick={() => setHistoricalInvoiceId('')}><X size={14} /> Close</button></div><div className="payment-review-summary"><span className={'payment-status status-' + historicalInvoice.status}>{statusLabel(historicalInvoice.status)}</span><strong>{historicalInvoice.director_payment_amount_pkr != null ? payoutAmount(historicalInvoice.director_payment_amount_pkr, 'PKR') : amount(historicalInvoice.net_amount_usd)}</strong><small>{formatMonth(historicalInvoice.month_start)} · {historicalInvoice.director_payment_amount_pkr != null ? 'Director-approved final payout' : 'System-suggested payment'}</small><small>System reference: {amount(historicalInvoice.net_amount_usd)}</small>{historicalInvoice.paid_amount != null && historicalInvoice.paid_currency && <small className="payment-actual-paid-label">Actual transfer: {payoutAmount(historicalInvoice.paid_amount, historicalInvoice.paid_currency)}</small>}</div><button type="button" className="payment-button payment-button-light" onClick={() => window.print()}><Printer size={15} /> Print invoice</button><InvoiceDocument request={historicalInvoice} managerName={profile.full_name} /><div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{events.filter(event => event.request_id === historicalInvoice.id).map(event => <EventLabel event={event} key={event.id} />)}</div></section>}
         </div>
         <aside className="payment-manager-aside">
           <div className="payment-aside-card"><span className="payment-eyebrow">PAYMENT POLICY</span><h3>Clear work. Clear pay.</h3><div className="payment-policy-line"><span>Hourly rate</span><strong>{amount(settings.hourly_rate_usd)} / hr</strong></div><div className="payment-policy-line"><span>Late deduction</span><strong>{amount(settings.late_deduction_usd)} / task</strong></div><p>One deduction applies when a task is more than 24 hours past its deadline. The calculation is shown on your invoice.</p></div>
           <div className="payment-aside-card payment-privacy-card"><LockKeyhole size={17} /><div><strong>Your information stays private.</strong><p>Your bank details and payment history are visible only to you and the Managing Director.</p></div></div>
-          {requests.length > 0 && <div className="payment-aside-card"><span className="payment-eyebrow">PAST PAYMENT RECORDS</span><div className="payment-mini-history">{requests.map(request => <button type="button" key={request.id} className={historicalInvoiceId === request.id ? 'active' : ''} onClick={() => setHistoricalInvoiceId(historicalInvoiceId === request.id ? '' : request.id)}><span><strong>{formatMonth(request.month_start)}</strong><small>{request.invoice_number} · {statusLabel(request.status)}</small></span><b>{request.status === 'paid' && request.paid_amount != null && request.paid_currency ? payoutAmount(request.paid_amount, request.paid_currency) : amount(request.net_amount_usd)}</b></button>)}</div></div>}
+          {requests.length > 0 && <div className="payment-aside-card"><span className="payment-eyebrow">PAST PAYMENT RECORDS</span><div className="payment-mini-history">{requests.map(request => <button type="button" key={request.id} className={historicalInvoiceId === request.id ? 'active' : ''} onClick={() => setHistoricalInvoiceId(historicalInvoiceId === request.id ? '' : request.id)}><span><strong>{formatMonth(request.month_start)}</strong><small>{request.invoice_number} · {statusLabel(request.status)}</small></span><b>{request.status === 'paid' && request.paid_amount != null && request.paid_currency ? payoutAmount(request.paid_amount, request.paid_currency) : request.director_payment_amount_pkr != null ? payoutAmount(request.director_payment_amount_pkr, 'PKR') : amount(request.net_amount_usd)}</b></button>)}</div></div>}
         </aside>
       </div>}
     </section>}
     {modal && <div className="payment-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setModal(null); }}>
       <section className="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
-        <div className="payment-modal-heading"><div><span className="payment-eyebrow">{modal === 'request' ? 'PAYMENT REQUEST' : modal === 'dispute' ? 'PAYMENT REVIEW' : modal === 'payment' ? 'RECORD BANK TRANSFER' : 'MANAGING DIRECTOR REVIEW'}</span><h2 id="payment-modal-title">{modal === 'request' ? (managerRequest ? 'Update bank details.' : 'Request payment.') : modal === 'dispute' ? 'Raise a dispute.' : modal === 'payment' ? 'Record actual payment.' : 'Request a revision.'}</h2></div><button type="button" className="payment-icon-button" onClick={() => setModal(null)} aria-label="Close"><X size={17} /></button></div>
+        <div className="payment-modal-heading"><div><span className="payment-eyebrow">{modal === 'request' ? 'PAYMENT REQUEST' : modal === 'dispute' ? 'PAYMENT REVIEW' : modal === 'payment' ? 'RECORD BANK TRANSFER' : modal === 'approve' ? 'DIRECTOR FINAL PAYOUT' : 'MANAGING DIRECTOR REVIEW'}</span><h2 id="payment-modal-title">{modal === 'request' ? (managerRequest ? 'Update bank details.' : 'Request payment.') : modal === 'dispute' ? 'Raise a dispute.' : modal === 'payment' ? 'Record actual payment.' : modal === 'approve' ? 'Set the final PKR amount.' : 'Request a revision.'}</h2></div><button type="button" className="payment-icon-button" onClick={() => setModal(null)} aria-label="Close"><X size={17} /></button></div>
         {modal === 'request' ? <form onSubmit={managerRequest ? resubmitRequest : submitRequest}>
           <p className="payment-modal-copy">The invoice will include your monthly completed hours, task details, late-task deductions, and bank information.</p>
           <label>Bank name<input required maxLength={120} value={bank.bank_name} onChange={event => { setBank({ ...bank, bank_name: event.target.value }); setBankDirty(true); }} placeholder="e.g. Meezan Bank" /></label>
@@ -518,10 +575,20 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
           <p className="payment-modal-copy">Explain which part of the invoice you believe needs a review. Your note will be added to the request history for the Managing Director.</p>
           <label>Reason for dispute<textarea required minLength={5} maxLength={1200} rows={4} value={noteDraft} onChange={event => setNoteDraft(event.target.value)} placeholder="Describe the hours, task record, or deduction you would like reviewed…" /></label>
           <div className="payment-modal-actions"><button type="button" className="payment-button payment-button-light" onClick={() => setModal(null)}>Cancel</button><button className="payment-button payment-button-primary" disabled={busyAction}>Submit dispute</button></div>
+        </form> : modal === 'approve' ? <form onSubmit={approveRequest}>
+          <p className="payment-modal-copy">Choose the final amount the Manager will be paid in PKR. This becomes the large, primary amount on the invoice. The original USD calculation remains underneath as a smaller system reference.</p>
+          <div className="payment-amount-presets" role="group" aria-label="Final payment amount presets">
+            {(['10000', '12000', '15000'] as const).map(value => <button type="button" key={value} className={directorAmountPreset === value ? 'selected' : ''} onClick={() => { setDirectorAmountPreset(value); setDirectorAmountDraft(value); }}>PKR {Number(value).toLocaleString('en-US')}</button>)}
+            <button type="button" className={directorAmountPreset === 'custom' ? 'selected' : ''} onClick={() => setDirectorAmountPreset('custom')}>Custom amount</button>
+          </div>
+          <label>Final amount (PKR)<input required type="number" min="0.01" max="9999999999.99" step="0.01" readOnly={directorAmountPreset !== 'custom'} value={directorAmountDraft} onChange={event => { setDirectorAmountDraft(event.target.value); setDirectorAmountPreset('custom'); }} /></label>
+          <label>Director's reason for this amount<textarea required minLength={5} maxLength={1200} rows={4} value={directorReasonDraft} onChange={event => setDirectorReasonDraft(event.target.value)} placeholder="Explain why this final PKR amount is being set instead of the system-suggested USD total…" /></label>
+          <div className="payment-modal-safe"><LockKeyhole size={14} /><span>This decision and its reason will be saved on the invoice and in the audit history. The original USD calculation will not be changed.</span></div>
+          <div className="payment-modal-actions"><button type="button" className="payment-button payment-button-light" onClick={() => setModal(null)}>Cancel</button><button className="payment-button payment-button-primary" disabled={busyAction || !directorAmountDraft || directorReasonDraft.trim().length < 5}>{busyAction ? 'Saving…' : selectedRequest?.status === 'approved' ? 'Save final PKR amount' : 'Approve with final PKR amount'}</button></div>
         </form> : modal === 'payment' ? <form onSubmit={recordPayment}>
-          <p className="payment-modal-copy">Enter the amount that was actually transferred. This will be recorded separately from the system-suggested invoice total of {amount(selectedRequest?.net_amount_usd)}.</p>
+          <p className="payment-modal-copy">The approved invoice amount is {selectedRequest?.director_payment_amount_pkr != null ? payoutAmount(selectedRequest.director_payment_amount_pkr, 'PKR') : 'not yet set'}. Enter the amount that was actually transferred.</p>
           <label>Actual amount paid<input required type="number" min="0.01" max="9999999999.99" step="0.01" value={paidAmountDraft} onChange={event => setPaidAmountDraft(event.target.value)} placeholder="Enter the amount transferred" /></label>
-          <label>Payment currency<select value={paidCurrencyDraft} onChange={event => setPaidCurrencyDraft(event.target.value as 'USD' | 'PKR')}><option value="USD">USD · US Dollar</option><option value="PKR">PKR · Pakistani Rupee</option></select></label>
+          <label>Payment currency<select value={paidCurrencyDraft} onChange={event => setPaidCurrencyDraft(event.target.value as 'USD' | 'PKR')}><option value="PKR">PKR · Pakistani Rupee</option><option value="USD">USD · US Dollar</option></select></label>
           <div className="payment-modal-safe"><LockKeyhole size={14} /><span>Only the Managing Director can record the final amount. Confirm that the bank transfer has already been sent.</span></div>
           <div className="payment-modal-actions"><button type="button" className="payment-button payment-button-light" onClick={() => setModal(null)}>Cancel</button><button className="payment-button payment-button-paid" disabled={busyAction || !paidAmountDraft}>{busyAction ? 'Recording…' : 'Confirm payment received'}</button></div>
         </form> : <form onSubmit={event => { event.preventDefault(); void reviewRequest('request_revision', noteDraft.trim()); }}>
