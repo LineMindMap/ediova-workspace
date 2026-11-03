@@ -101,7 +101,7 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
   const bankHolder = request?.bank_account_holder || '';
   const bankNumber = request?.bank_account_number || '';
   const start = data.month_start;
-  const periodText = formatMonth(start) + ' · ' + formatDay(start) + ' – ' + (request ? formatDay(new Date(Date.UTC(Number(start.slice(0,4)), Number(start.slice(5,7)), 0)).toISOString()) : formatDay(data.month_end));
+  const periodText = formatMonth(start) + ' · ' + formatDay(start) + ' – ' + (request ? formatDay(new Date(Date.UTC(Number(start.slice(0,4)), Number(start.slice(5,7)), 0)).toISOString()) : formatDay(preview?.month_end));
   return <article className="payment-invoice" id="ediova-payment-invoice">
     <div className="payment-invoice-top">
       <div className="payment-invoice-brand"><img src="./ediova-mark.svg" alt="Ediova" /><div><strong>ediova<span>.</span></strong><small>CREATIVE WORKSPACE</small></div></div>
@@ -167,13 +167,14 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const historicalInvoice = requests.find(request => request.id === historicalInvoiceId && request.manager_id === profile?.id) || null;
 
   useEffect(() => {
-    if (!profile || !supabase) return;
+    const client = supabase;
+    if (!profile || !client) return;
     let alive = true;
     const refresh = async (showLoader: boolean) => {
       if (showLoader && alive) setLoading(true);
       const jobs = [
-        supabase.from('manager_payment_requests').select('*').order('month_start', { ascending: false }),
-        supabase.from('payment_settings').select('hourly_rate_usd,late_deduction_usd').eq('id', true).maybeSingle()
+        client.from('manager_payment_requests').select('*').order('month_start', { ascending: false }),
+        client.from('payment_settings').select('hourly_rate_usd,late_deduction_usd').eq('id', true).maybeSingle()
       ] as const;
       const [requestResult, settingResult] = await Promise.all(jobs);
       if (!alive) return;
@@ -185,7 +186,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
         if (selectedId && !rows.some(row => row.id === selectedId)) setSelectedId(rows[0]?.id || '');
         const ids = rows.map(row => row.id);
         if (ids.length) {
-          const eventResult = await supabase.from('manager_payment_request_events').select('*').in('request_id', ids).order('created_at', { ascending: true });
+          const eventResult = await client.from('manager_payment_request_events').select('*').in('request_id', ids).order('created_at', { ascending: true });
           if (alive && !eventResult.error) setEvents((eventResult.data || []) as PaymentEvent[]);
         } else setEvents([]);
       }
@@ -196,9 +197,9 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
         setDeductionDraft(String(next.late_deduction_usd));
       }
       if (!director && profile.role === 'manager') {
-        const bankResult = await supabase.from('manager_bank_details').select('bank_name,account_holder_name,account_number').eq('profile_id', profile.id).maybeSingle();
+        const bankResult = await client.from('manager_bank_details').select('bank_name,account_holder_name,account_number').eq('profile_id', profile.id).maybeSingle();
         if (alive && !bankDirty && bankResult.data) setBank(bankResult.data as BankForm);
-        const previewResult = await supabase.rpc('get_manager_payment_preview', { p_month: monthStart });
+        const previewResult = await client.rpc('get_manager_payment_preview', { p_month: monthStart });
         if (alive) {
           if (previewResult.error) {
             setPreview(null);
@@ -240,14 +241,15 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     await refreshAfterAction();
   }
   async function refreshAfterAction() {
-    if (!supabase) return;
-    const result = await supabase.from('manager_payment_requests').select('*').order('month_start', { ascending: false });
+    const client = supabase;
+    if (!client) return;
+    const result = await client.from('manager_payment_requests').select('*').order('month_start', { ascending: false });
     if (!result.error && result.data) {
       const rows = result.data as PaymentRequest[];
       setRequests(rows);
       const ids = rows.map(row => row.id);
       if (ids.length) {
-        const timeline = await supabase.from('manager_payment_request_events').select('*').in('request_id', ids).order('created_at', { ascending: true });
+        const timeline = await client.from('manager_payment_request_events').select('*').in('request_id', ids).order('created_at', { ascending: true });
         if (!timeline.error) setEvents((timeline.data || []) as PaymentEvent[]);
       }
     }
