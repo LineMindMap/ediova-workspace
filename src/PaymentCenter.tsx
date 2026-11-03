@@ -149,6 +149,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const [events, setEvents] = useState<PaymentEvent[]>([]);
   const [preview, setPreview] = useState<PaymentPreview | null>(null);
   const [previewError, setPreviewError] = useState('');
+  const [monthAlreadySubmitted, setMonthAlreadySubmitted] = useState(false);
   const [settings, setSettings] = useState<PaymentSettings>({ hourly_rate_usd: 1, late_deduction_usd: 1 });
   const [rateDraft, setRateDraft] = useState('1');
   const [deductionDraft, setDeductionDraft] = useState('1');
@@ -180,11 +181,16 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     let alive = true;
     const refresh = async (showLoader: boolean) => {
       if (showLoader && alive) setLoading(true);
+      const claimJob = profile.role === 'manager'
+        ? client.rpc('manager_payment_month_claimed', { p_month: monthStart })
+        : Promise.resolve({ data: false, error: null });
       const jobs = [
         client.from('manager_payment_requests').select('*').order('month_start', { ascending: false }),
-        client.from('payment_settings').select('hourly_rate_usd,late_deduction_usd').eq('id', true).maybeSingle()
+        client.from('payment_settings').select('hourly_rate_usd,late_deduction_usd').eq('id', true).maybeSingle(),
+        claimJob
       ] as const;
-      const [requestResult, settingResult] = await Promise.all(jobs);
+      const [requestResult, settingResult, claimResult] = await Promise.all(jobs);
+      if (profile.role === 'manager') setMonthAlreadySubmitted(Boolean(claimResult.data));
       if (!alive) return;
       if (requestResult.error) notify('Payment history could not load: ' + requestResult.error.message);
       else {
@@ -369,8 +375,8 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     {dashboard && director && pendingDirector.length > 0 && <button type="button" className="payment-dashboard-alert" onClick={onOpen}>
       <span className="payment-alert-icon"><BellRing size={18} /></span><span className="payment-alert-copy"><strong>Payment approvals need your attention</strong><small>{activeForDashboard} request(s) awaiting review · {awaitingTransfer} approved invoice(s) awaiting transfer</small></span><span className="payment-alert-count">{pendingDirector.length}</span><ChevronRight size={17} />
     </button>}
-    {dashboard && !director && (managerHasAction || managerRequest) && <button type="button" className="payment-dashboard-alert payment-manager-alert" onClick={onOpen}>
-      <span className="payment-alert-icon"><AlertCircle size={18} /></span><span className="payment-alert-copy"><strong>{managerRequest?.status === 'paid' ? 'Your payment has been recorded as paid' : managerRequest?.status === 'approved' ? 'Your payment request has been approved' : managerRequest?.status === 'requested' ? 'Your payment request has been sent to the Director' : 'A payment request needs your attention'}</strong><small>{managerRequest ? formatMonth(managerRequest.month_start) + ' · ' + (managerRequest.status === 'paid' && managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : statusLabel(managerRequest.status)) : 'The Managing Director has requested a revision to your invoice.'}</small></span><ChevronRight size={17} />
+    {dashboard && !director && (managerHasAction || managerRequest || monthAlreadySubmitted) && <button type="button" className="payment-dashboard-alert payment-manager-alert" onClick={onOpen}>
+      <span className="payment-alert-icon"><AlertCircle size={18} /></span><span className="payment-alert-copy"><strong>{managerRequest?.status === 'paid' ? 'Your payment has been recorded as paid' : managerRequest?.status === 'approved' ? 'Your payment request has been approved' : managerRequest?.status === 'requested' ? 'Your payment request has been sent to the Director' : monthAlreadySubmitted && !managerRequest ? 'This month has already been submitted' : 'A payment request needs your attention'}</strong><small>{managerRequest ? formatMonth(managerRequest.month_start) + ' · ' + (managerRequest.status === 'paid' && managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : statusLabel(managerRequest.status)) : monthAlreadySubmitted ? formatMonth(monthStart) + ' · This month is locked against duplicate requests.' : 'The Managing Director has requested a revision to your invoice.'}</small></span><ChevronRight size={17} />
     </button>}
     {active && <section className="payment-center">
       <header className="payment-center-heading"><div><span className="payment-eyebrow">EDI OVA · FINANCE</span><h2>{director ? 'Payment administration.' : 'Your monthly payment.'}</h2><p>{director ? 'Review submitted invoices, set the payment policy, and record completed transfers.' : 'Review your monthly work summary, request payment, and keep every invoice in one place.'}</p></div>
@@ -417,7 +423,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
             {historicalInvoiceId === managerRequest.id && <><InvoiceDocument request={managerRequest} managerName={profile.full_name} /><div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{events.filter(event => event.request_id === managerRequest.id).map(event => <EventLabel event={event} key={event.id} />)}</div></>}
           </> : <>
             <div className="payment-period-card"><div><span className="payment-eyebrow">READY FOR YOUR REQUEST</span><h3>{formatMonth(monthStart)}</h3><p>Payment requests open from the first day of the following month.</p></div><span className="payment-period-icon"><CalendarDays size={22} /></span></div>
-            {preview ? <div className="payment-estimate-card"><div className="payment-estimate-top"><div><span className="payment-eyebrow">YOUR ESTIMATED PAYMENT</span><h3>{amount(preview.net_amount_usd)}</h3><small>Subject to the Managing Director’s review</small></div><div className="payment-estimate-icon"><CircleDollarSign size={22} /></div></div>
+            {monthAlreadySubmitted && !managerRequest ? <div className="payment-empty"><BadgeCheck size={20} /><strong>This month’s payment request has already been submitted.</strong><p>The Director removed the invoice record, but this month remains locked to prevent a duplicate request. Please contact the Managing Director if the invoice needs to be restored.</p></div> : preview ? <div className="payment-estimate-card"><div className="payment-estimate-top"><div><span className="payment-eyebrow">YOUR ESTIMATED PAYMENT</span><h3>{amount(preview.net_amount_usd)}</h3><small>Subject to the Managing Director’s review</small></div><div className="payment-estimate-icon"><CircleDollarSign size={22} /></div></div>
               <div className="payment-estimate-stats"><div><span>Credited hours</span><strong>{quantity(preview.completed_hours)} hrs</strong></div><div><span>Tasks completed</span><strong>{quantity(preview.completed_tasks)}</strong></div><div><span>Late tasks</span><strong>{quantity(preview.delayed_tasks)}</strong></div><div><span>Performance</span><strong>{quantity(preview.performance_score)}/100</strong></div></div>
               <div className="payment-calculation"><div><span>{quantity(preview.completed_hours)} hours × {amount(preview.hourly_rate_usd)}</span><strong>{amount(preview.gross_amount_usd)}</strong></div><div><span>{quantity(preview.delayed_tasks)} late tasks × {amount(preview.late_deduction_usd)}</span><strong>−{amount(preview.deductions_usd)}</strong></div><div><span>VAT · 0.00%</span><strong>{amount(0)}</strong></div><div className="payment-calculation-total"><span>System-suggested payment</span><strong>{amount(preview.net_amount_usd)}</strong></div></div>
               <button type="button" className="payment-button payment-button-primary payment-request-cta" onClick={() => setModal('request')}><Wallet size={16} /> Request payment <ArrowRight size={16} /></button>
