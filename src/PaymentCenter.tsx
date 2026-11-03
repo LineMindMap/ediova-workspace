@@ -26,7 +26,7 @@ type PaymentRequest = {
   bank_name: string; bank_account_holder: string; bank_account_number: string;
   work_breakdown: WorkItem[]; delay_breakdown: DelayItem[];
   revision_note: string | null; dispute_note: string | null; requested_at: string;
-  reviewed_at: string | null; paid_at: string | null;
+  reviewed_at: string | null; paid_at: string | null; updated_at?: string | null;
 };
 type BankForm = { bank_name: string; account_holder_name: string; account_number: string };
 type PaymentEvent = { id: string; request_id: string; actor_name: string; actor_role: Role; action: string; note: string | null; created_at: string };
@@ -201,6 +201,48 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const pendingDirector = requests.filter(request => ['requested', 'disputed', 'approved'].includes(request.status));
   const managerRequest = requests.find(request => request.manager_id === profile?.id && request.month_start === monthStart) || null;
   const historicalInvoice = requests.find(request => request.id === historicalInvoiceId && request.manager_id === profile?.id) || null;
+  const paymentAlertStorageKey = profile ? 'ediova-payment-alert-seen-v1:' + profile.id : '';
+  const directorAlertSignature = director && pendingDirector.length
+    ? 'director:' + pendingDirector.map(request => [
+        request.id, request.status, request.updated_at || request.reviewed_at || request.requested_at
+      ].join(':')).sort().join('|')
+    : '';
+  const managerAlertSignature = !director && (managerRequest || monthAlreadySubmitted || monthReopenAvailable)
+    ? 'manager:' + [
+        managerRequest?.id || monthStart,
+        managerRequest?.status || '',
+        managerRequest?.updated_at || managerRequest?.paid_at || managerRequest?.requested_at || '',
+        monthAlreadySubmitted ? 'claimed' : '',
+        monthReopenAvailable ? 'reopened' : ''
+      ].join(':')
+    : '';
+  const paymentAlertSignature = director ? directorAlertSignature : managerAlertSignature;
+  const [seenPaymentAlertSignature, setSeenPaymentAlertSignature] = useState(() => {
+    try {
+      return profile?.id && typeof window !== 'undefined'
+        ? window.localStorage.getItem('ediova-payment-alert-seen-v1:' + profile.id) || ''
+        : '';
+    } catch { return ''; }
+  });
+  const paymentAlertVisible = dashboard && Boolean(paymentAlertSignature) && paymentAlertSignature !== seenPaymentAlertSignature;
+
+  function markPaymentAlertSeen() {
+    if (!paymentAlertStorageKey || !paymentAlertSignature) return;
+    try { window.localStorage.setItem(paymentAlertStorageKey, paymentAlertSignature); } catch { /* Storage may be unavailable. */ }
+    setSeenPaymentAlertSignature(paymentAlertSignature);
+  }
+
+  useEffect(() => {
+    if (!paymentAlertStorageKey) return;
+    try { setSeenPaymentAlertSignature(window.localStorage.getItem(paymentAlertStorageKey) || ''); }
+    catch { setSeenPaymentAlertSignature(''); }
+  }, [paymentAlertStorageKey]);
+
+  useEffect(() => {
+    if (!active || !paymentAlertStorageKey || !paymentAlertSignature) return;
+    try { window.localStorage.setItem(paymentAlertStorageKey, paymentAlertSignature); } catch { /* Storage may be unavailable. */ }
+    setSeenPaymentAlertSignature(paymentAlertSignature);
+  }, [active, paymentAlertStorageKey, paymentAlertSignature]);
 
   useEffect(() => {
     const client = supabase;
@@ -473,10 +515,10 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const managerHasAction = requests.some(request => request.manager_id === profile.id && request.status === 'revision_requested');
 
   return <>
-    {dashboard && director && pendingDirector.length > 0 && <button type="button" className="payment-dashboard-alert" onClick={onOpen}>
+    {paymentAlertVisible && director && pendingDirector.length > 0 && <button type="button" className="payment-dashboard-alert" onClick={() => { markPaymentAlertSeen(); onOpen(); }}>
       <span className="payment-alert-icon"><BellRing size={18} /></span><span className="payment-alert-copy"><strong>Payment approvals need your attention</strong><small>{activeForDashboard} request(s) awaiting review · {awaitingTransfer} approved invoice(s) awaiting transfer</small></span><span className="payment-alert-count">{pendingDirector.length}</span><ChevronRight size={17} />
     </button>}
-    {dashboard && !director && (managerHasAction || managerRequest || monthAlreadySubmitted || monthReopenAvailable) && <button type="button" className="payment-dashboard-alert payment-manager-alert" onClick={onOpen}>
+    {paymentAlertVisible && !director && (managerHasAction || managerRequest || monthAlreadySubmitted || monthReopenAvailable) && <button type="button" className="payment-dashboard-alert payment-manager-alert" onClick={() => { markPaymentAlertSeen(); onOpen(); }}>
       <span className="payment-alert-icon"><AlertCircle size={18} /></span><span className="payment-alert-copy"><strong>{monthReopenAvailable ? 'The Director reopened a month for a replacement request' : managerRequest?.status === 'paid' ? 'Your payment has been recorded as paid' : managerRequest?.status === 'approved' ? 'Your payment request has been approved' : managerRequest?.status === 'requested' ? 'Your payment request has been sent to the Director' : monthAlreadySubmitted && !managerRequest ? 'This month has already been submitted' : 'A payment request needs your attention'}</strong><small>{monthReopenAvailable ? formatMonth(monthStart) + ' · You may submit one replacement request.' : managerRequest ? formatMonth(managerRequest.month_start) + ' · ' + (managerRequest.status === 'paid' && managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : statusLabel(managerRequest.status)) : monthAlreadySubmitted ? formatMonth(monthStart) + ' · This month is locked against duplicate requests.' : 'The Managing Director has requested a revision to your invoice.'}</small></span><ChevronRight size={17} />
     </button>}
     {active && <section className="payment-center">
