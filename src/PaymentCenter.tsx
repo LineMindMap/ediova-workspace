@@ -215,7 +215,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     void refresh(true);
     const timer = window.setInterval(() => void refresh(false), 30000);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [profile?.id, profile?.role, monthStart, notify]);
+  }, [profile?.id, profile?.role, monthStart, selectedId, bankDirty, notify]);
 
   async function submitRequest(event: FormEvent) {
     event.preventDefault();
@@ -277,9 +277,9 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   }
   async function disputeRequest(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !selectedRequest) return;
+    if (!supabase || !managerRequest) return;
     setBusyAction(true);
-    const { error } = await supabase.rpc('dispute_manager_payment_request', { p_request_id: selectedRequest.id, p_note: noteDraft.trim() });
+    const { error } = await supabase.rpc('dispute_manager_payment_request', { p_request_id: managerRequest.id, p_note: noteDraft.trim() });
     setBusyAction(false);
     if (error) { notify('The dispute could not be submitted: ' + error.message); return; }
     setModal(null);
