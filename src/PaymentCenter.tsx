@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AlertCircle, ArrowRight, BadgeCheck, Banknote, Barcode, BellRing, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, Download, FileText, LockKeyhole, Printer, RefreshCw, ShieldCheck, Wallet, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, BadgeCheck, Banknote, BellRing, CalendarDays, Check, ChevronRight, CircleDollarSign, Clock3, FileText, LockKeyhole, Printer, RefreshCw, ShieldCheck, Wallet, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 type Role = 'manager' | 'managing_director';
@@ -101,7 +101,6 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
   const bankHolder = request?.bank_account_holder || '';
   const bankNumber = request?.bank_account_number || '';
   const start = data.month_start;
-  const end = request ? new Date(new Date(start + 'T12:00:00Z').getTime()) : data.month_end;
   const periodText = formatMonth(start) + ' · ' + formatDay(start) + ' – ' + (request ? formatDay(new Date(Date.UTC(Number(start.slice(0,4)), Number(start.slice(5,7)), 0)).toISOString()) : formatDay(data.month_end));
   return <article className="payment-invoice" id="ediova-payment-invoice">
     <div className="payment-invoice-top">
@@ -152,6 +151,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const [bank, setBank] = useState<BankForm>(EMPTY_BANK);
   const [bankDirty, setBankDirty] = useState(false);
   const [selectedId, setSelectedId] = useState('');
+  const [historicalInvoiceId, setHistoricalInvoiceId] = useState('');
   const [monthStart] = useState(previousMonthStart);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -164,6 +164,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const selectedEvents = useMemo(() => selectedRequest ? events.filter(event => event.request_id === selectedRequest.id) : [], [events, selectedRequest?.id]);
   const pendingDirector = requests.filter(request => ['requested', 'disputed', 'approved'].includes(request.status));
   const managerRequest = requests.find(request => request.manager_id === profile?.id && request.month_start === monthStart) || null;
+  const historicalInvoice = requests.find(request => request.id === historicalInvoiceId && request.manager_id === profile?.id) || null;
 
   useEffect(() => {
     if (!profile || !supabase) return;
@@ -232,6 +233,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     if (error) { notify('Payment request could not be submitted: ' + error.message); return; }
     const requestId = data as string;
     setSelectedId(requestId);
+    setHistoricalInvoiceId('');
     setModal(null);
     setBankDirty(false);
     notify('Your monthly payment request and invoice have been submitted to the Managing Director.');
@@ -252,14 +254,14 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   }
   async function resubmitRequest(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !selectedRequest) return;
+    if (!supabase || !managerRequest) return;
     if (!bank.bank_name.trim() || !bank.account_holder_name.trim() || !bank.account_number.trim()) {
       notify('Please complete all bank details before resubmitting.');
       return;
     }
     setBusyAction(true);
     const { error } = await supabase.rpc('resubmit_manager_payment_request', {
-      p_request_id: selectedRequest.id,
+      p_request_id: managerRequest.id,
       p_bank_name: bank.bank_name.trim(),
       p_account_holder: bank.account_holder_name.trim(),
       p_account_number: bank.account_number.trim()
@@ -382,11 +384,12 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
             </div> : <div className="payment-empty"><AlertCircle size={20} /><strong>{previewError ? 'Monthly estimate is not available yet.' : 'Your estimate is being prepared.'}</strong><p>{previewError ? 'The payment period is the previous completed calendar month. The request becomes available from the first day of the new month.' : 'Complete and credited task hours will appear here.'}</p></div>}
             <div className="payment-bank-hint"><Banknote size={18} /><div><strong>Pakistani bank account</strong><p>When you request payment, add your bank name, account holder name, and account number. You can review the details on the invoice before submitting.</p></div></div>
           </>}
+          {historicalInvoice && historicalInvoice.id !== managerRequest?.id && <section className="payment-archive-panel"><div className="payment-selected-toolbar"><div><span className="payment-eyebrow">ARCHIVED INVOICE</span><strong>{historicalInvoice.invoice_number}</strong></div><button type="button" className="payment-button payment-button-light" onClick={() => setHistoricalInvoiceId('')}><X size={14} /> Close</button></div><div className="payment-review-summary"><span className={'payment-status status-' + historicalInvoice.status}>{statusLabel(historicalInvoice.status)}</span><strong>{amount(historicalInvoice.net_amount_usd)}</strong><small>{formatMonth(historicalInvoice.month_start)}</small></div><button type="button" className="payment-button payment-button-light" onClick={() => window.print()}><Printer size={15} /> Print invoice</button><InvoiceDocument request={historicalInvoice} managerName={profile.full_name} /><div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{events.filter(event => event.request_id === historicalInvoice.id).map(event => <EventLabel event={event} key={event.id} />)}</div></section>}
         </div>
         <aside className="payment-manager-aside">
           <div className="payment-aside-card"><span className="payment-eyebrow">PAYMENT POLICY</span><h3>Clear work. Clear pay.</h3><div className="payment-policy-line"><span>Hourly rate</span><strong>{amount(settings.hourly_rate_usd)} / hr</strong></div><div className="payment-policy-line"><span>Late deduction</span><strong>{amount(settings.late_deduction_usd)} / task</strong></div><p>One deduction applies when a task is more than 24 hours past its deadline. The calculation is shown on your invoice.</p></div>
           <div className="payment-aside-card payment-privacy-card"><LockKeyhole size={17} /><div><strong>Your information stays private.</strong><p>Your bank details and payment history are visible only to you and the Managing Director.</p></div></div>
-          {requests.length > 0 && <div className="payment-aside-card"><span className="payment-eyebrow">PAST PAYMENT RECORDS</span><div className="payment-mini-history">{requests.map(request => <button type="button" key={request.id} onClick={() => { setSelectedId(request.id); }}><span><strong>{formatMonth(request.month_start)}</strong><small>{request.invoice_number}</small></span><b>{amount(request.net_amount_usd)}</b></button>)}</div></div>}
+          {requests.length > 0 && <div className="payment-aside-card"><span className="payment-eyebrow">PAST PAYMENT RECORDS</span><div className="payment-mini-history">{requests.map(request => <button type="button" key={request.id} className={historicalInvoiceId === request.id ? 'active' : ''} onClick={() => setHistoricalInvoiceId(request.id === managerRequest?.id ? '' : request.id)}><span><strong>{formatMonth(request.month_start)}</strong><small>{request.invoice_number}</small></span><b>{amount(request.net_amount_usd)}</b></button>)}</div></div>}
         </aside>
       </div>}
     </section>}
