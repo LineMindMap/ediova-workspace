@@ -823,6 +823,9 @@ export default function App() {
     const map: Record<string, { id: string; task: Task; isVirtual: boolean; scheduledAt: string }[]> = {};
     const monthKey = calendarMonth.getFullYear() + '-' + String(calendarMonth.getMonth() + 1).padStart(2, '0');
     const visibleTasks = tasks.filter(task => !task.dropped_at && (director || task.assignee_id === profile?.id) && task.status !== 'cancelled' && task.status !== 'archived');
+    const scheduleTemplates = tasks.filter(task => (director || task.assignee_id === profile?.id)
+      && task.status !== 'cancelled' && task.status !== 'archived'
+      && !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none'));
     visibleTasks.filter(task => keyFor(task.scheduled_at).slice(0, 7) === monthKey).forEach(task => {
       const key = keyFor(task.scheduled_at);
       (map[key] ||= []).push({ id: task.id, task, isVirtual: false, scheduledAt: task.scheduled_at });
@@ -833,7 +836,7 @@ export default function App() {
     };
     const anchorKeyFor = (date: Date) => date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
     const today = todayKey();
-    visibleTasks.filter(series => !series.recurrence_parent_id && Boolean(series.repeat_unit && series.repeat_unit !== 'none')).forEach(series => {
+    scheduleTemplates.forEach(series => {
       const startKey = keyFor(series.scheduled_at);
       const endKey = series.repeat_until ? keyFor(series.repeat_until) : null;
       const startDay = dayNumber(startKey);
