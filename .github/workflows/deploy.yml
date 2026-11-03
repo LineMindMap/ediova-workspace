@@ -99,13 +99,16 @@ jobs:
           html_file="$(mktemp)"
           html_url="${SITE_URL}?build=${BUILD_SHA}"
           ready=0
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 24); do
             code="$(curl --silent --show-error --location -H 'Cache-Control: no-cache' --output "$html_file" --write-out '%{http_code}' "$html_url" || true)"
-            if [ "$code" = "200" ] && grep -q '<div id="root"></div>' "$html_file"; then
+            if [ "$code" = "200" ] \
+              && grep -q '<div id="root"></div>' "$html_file" \
+              && grep -Eq 'src="[^"]+[.]js"' "$html_file" \
+              && grep -Eq 'href="[^"]+[.]css"' "$html_file"; then
               ready=1
               break
             fi
-            echo "Attempt $attempt: waiting for published site (HTTP ${code:-unknown})"
+            echo "Attempt $attempt: waiting for the Vite-built page and assets (HTTP ${code:-unknown})"
             sleep 5
           done
           if [ "$ready" != "1" ]; then
