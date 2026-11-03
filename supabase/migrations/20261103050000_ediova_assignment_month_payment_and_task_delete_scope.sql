@@ -55,6 +55,7 @@ BEGIN
     AND t.status = 'completed'::public.task_status
     AND t.schedule_at >= month_begin
     AND t.schedule_at < month_end
+    AND t.dropped_at IS NULL
   LEFT JOIN public.task_hour_targets h ON h.task_id = t.id
   WHERE p.role = 'manager'::public.user_role
     AND (caller_role = 'managing_director'::public.user_role OR p.id = auth.uid())
@@ -75,12 +76,14 @@ SET search_path TO 'public', 'app_private', 'auth', 'pg_temp'
 AS $function$
 DECLARE
   v_task public.tasks%ROWTYPE;
+  v_root public.tasks%ROWTYPE;
   v_root_id uuid;
+  v_role public.user_role;
   v_deleted_ids uuid[];
 BEGIN
-  IF auth.uid() IS NULL
-    OR app_private.current_app_role() IS DISTINCT FROM 'managing_director'::public.user_role THEN
-    RAISE EXCEPTION 'Only the Managing Director can delete tasks.';
+  v_role := app_private.current_app_role();
+  IF auth.uid() IS NULL OR v_role IS NULL THEN
+    RAISE EXCEPTION 'Sign in before deleting a task.';
   END IF;
   IF p_task_id IS NULL OR p_delete_linked IS NULL THEN
     RAISE EXCEPTION 'Choose a task and a deletion scope.';
@@ -94,10 +97,30 @@ BEGIN
     RAISE EXCEPTION 'The selected task no longer exists.';
   END IF;
 
+  IF v_role = 'manager'::public.user_role AND (
+    p_delete_linked
+    OR v_task.assignee_id IS DISTINCT FROM auth.uid()
+    OR v_task.status <> 'completed'::public.task_status
+    OR v_task.dropped_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Managers can delete only their own completed tasks, one task at a time.';
+  ELSIF v_role <> 'managing_director'::public.user_role
+    AND v_role <> 'manager'::public.user_role THEN
+    RAISE EXCEPTION 'You do not have permission to delete this task.';
+  END IF;
+
   v_root_id := coalesce(v_task.recurrence_parent_id, v_task.id);
+  SELECT * INTO v_root
+  FROM public.tasks
+  WHERE id = v_root_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The linked schedule could not be found.';
+  END IF;
+
   PERFORM 1
   FROM public.tasks t
-  WHERE t.id = v_root_id OR t.recurrence_parent_id = v_root_id
+  WHERE t.recurrence_parent_id = v_root_id
   FOR UPDATE;
 
   SELECT coalesce(array_agg(t.id ORDER BY t.schedule_at, t.id), ARRAY[]::uuid[])
@@ -106,10 +129,27 @@ BEGIN
   WHERE t.id = v_root_id OR t.recurrence_parent_id = v_root_id;
 
   IF p_delete_linked THEN
+    IF v_role <> 'managing_director'::public.user_role THEN
+      RAISE EXCEPTION 'Only the Managing Director can remove an entire linked schedule.';
+    END IF;
     DELETE FROM public.tasks WHERE id = v_root_id;
     RETURN v_deleted_ids;
   END IF;
 
+  -- A repeating source task is also the schedule engine's template. Hide and
+  -- exempt that one task instead of physically deleting its parent row; this
+  -- keeps future and already-created occurrences running independently.
+  IF v_task.id = v_root_id AND v_root.repeat_unit <> 'none' THEN
+    UPDATE public.tasks
+    SET dropped_at = coalesce(dropped_at, now()),
+        dropped_by = auth.uid(),
+        drop_reason = 'Single-task deletion; linked schedule preserved.'
+    WHERE id = v_task.id;
+    RETURN ARRAY[v_task.id];
+  END IF;
+
+  -- If a non-repeating parent is removed on its own, detach its children first
+  -- so their completed work/history does not cascade away with the parent.
   IF v_task.id = v_root_id THEN
     UPDATE public.tasks
     SET recurrence_parent_id = NULL
@@ -233,7 +273,8 @@ BEGIN
   WHERE t.assignee_id = p_manager_id
     AND t.status = 'completed'::public.task_status
     AND t.schedule_at >= v_start
-    AND t.schedule_at < v_end;
+    AND t.schedule_at < v_end
+    AND t.dropped_at IS NULL;
 
   SELECT
     count(t.id)::integer,
@@ -250,6 +291,7 @@ BEGIN
     AND t.status NOT IN ('cancelled'::public.task_status, 'archived'::public.task_status)
     AND t.schedule_at >= v_start
     AND t.schedule_at < v_end
+    AND t.dropped_at IS NULL
     AND (
       (t.status = 'completed'::public.task_status AND t.completed_at > t.deadline_at + interval '24 hours')
       OR (t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status)
@@ -270,7 +312,8 @@ BEGIN
   WHERE t.assignee_id = p_manager_id
     AND t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status)
     AND t.schedule_at >= v_start
-    AND t.schedule_at < v_end;
+    AND t.schedule_at < v_end
+    AND t.dropped_at IS NULL;
 
   SELECT score.performance_score INTO v_score
   FROM app_private.get_manager_performance() AS score
@@ -391,6 +434,7 @@ BEGIN
   WHERE t.id = ANY(v_opted_out_ids)
     AND t.assignee_id = auth.uid()
     AND t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status)
+    AND t.dropped_at IS NULL
     AND t.schedule_at >= (p_month::timestamp AT TIME ZONE 'Asia/Karachi')
     AND t.schedule_at < ((p_month + interval '1 month')::timestamp AT TIME ZONE 'Asia/Karachi');
 
@@ -559,6 +603,7 @@ BEGIN
   WHERE t.id = ANY(v_opted_out_ids)
     AND t.assignee_id = auth.uid()
     AND t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status)
+    AND t.dropped_at IS NULL
     AND t.schedule_at >= (v_request.month_start::timestamp AT TIME ZONE 'Asia/Karachi')
     AND t.schedule_at < ((v_request.month_start + interval '1 month')::timestamp AT TIME ZONE 'Asia/Karachi');
 
@@ -682,5 +727,282 @@ $function$;
 
 REVOKE ALL ON FUNCTION app_private.resubmit_manager_payment_request(uuid, text, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION app_private.resubmit_manager_payment_request(uuid, text, text, text) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
+
+
+-- Director can explicitly drop one occurrence without changing its status,
+-- siblings, recurring source, schedule generation, or private hour target.
+ALTER TABLE public.tasks
+  ADD COLUMN IF NOT EXISTS dropped_at timestamptz,
+  ADD COLUMN IF NOT EXISTS dropped_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS drop_reason text;
+
+CREATE INDEX IF NOT EXISTS tasks_dropped_by_idx ON public.tasks (dropped_by);
+CREATE INDEX IF NOT EXISTS tasks_assignee_schedule_month_idx
+  ON public.tasks (assignee_id, schedule_at)
+  WHERE dropped_at IS NULL;
+
+CREATE OR REPLACE FUNCTION app_private.drop_ediova_task(
+  p_task_id uuid,
+  p_reason text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'app_private', 'auth', 'pg_temp'
+AS $function$
+DECLARE
+  v_name text;
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+BEGIN
+  IF auth.uid() IS NULL
+    OR app_private.current_app_role() IS DISTINCT FROM 'managing_director'::public.user_role THEN
+    RAISE EXCEPTION 'Only the Managing Director can drop a task.';
+  END IF;
+  IF p_task_id IS NULL THEN
+    RAISE EXCEPTION 'Choose a task to drop.';
+  END IF;
+
+  UPDATE public.tasks
+  SET dropped_at = now(),
+      dropped_by = auth.uid(),
+      drop_reason = left(coalesce(v_reason, 'Removed from credited workload by the Managing Director.'), 500)
+  WHERE id = p_task_id AND dropped_at IS NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The selected task no longer exists or has already been dropped.';
+  END IF;
+
+  SELECT full_name INTO v_name FROM public.profiles WHERE id = auth.uid();
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.drop_ediova_task(p_task_id uuid, p_reason text DEFAULT NULL)
+RETURNS void
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path TO 'public', 'app_private', 'pg_temp'
+AS $function$
+  SELECT app_private.drop_ediova_task(p_task_id, p_reason);
+$function$;
+
+REVOKE ALL ON FUNCTION app_private.drop_ediova_task(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION app_private.drop_ediova_task(uuid, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.drop_ediova_task(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.drop_ediova_task(uuid, text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION app_private.restore_ediova_task(p_task_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'app_private', 'auth', 'pg_temp'
+AS $function$
+BEGIN
+  IF auth.uid() IS NULL
+    OR app_private.current_app_role() IS DISTINCT FROM 'managing_director'::public.user_role THEN
+    RAISE EXCEPTION 'Only the Managing Director can restore a dropped task.';
+  END IF;
+  UPDATE public.tasks
+  SET dropped_at = NULL, dropped_by = NULL, drop_reason = NULL
+  WHERE id = p_task_id AND dropped_at IS NOT NULL;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'The selected task is not currently dropped.';
+  END IF;
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.restore_ediova_task(p_task_id uuid)
+RETURNS void
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path TO 'public', 'app_private', 'pg_temp'
+AS $function$
+  SELECT app_private.restore_ediova_task(p_task_id);
+$function$;
+
+REVOKE ALL ON FUNCTION app_private.restore_ediova_task(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION app_private.restore_ediova_task(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.restore_ediova_task(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.restore_ediova_task(uuid) TO authenticated;
+
+-- A dropped task is not visible to its Manager, but other occurrences of the
+-- repeating series remain visible. Directors retain the full record.
+DROP POLICY IF EXISTS tasks_assignee_calendar ON public.tasks;
+CREATE POLICY tasks_assignee_calendar
+  ON public.tasks FOR SELECT TO authenticated
+  USING (assignee_id = (SELECT auth.uid()) AND dropped_at IS NULL);
+
+DROP POLICY IF EXISTS tasks_select_access ON public.tasks;
+CREATE POLICY tasks_select_access
+  ON public.tasks FOR SELECT TO authenticated
+  USING (
+    app_private.is_managing_director()
+    OR (
+      app_private.current_app_role() = 'manager'::public.user_role
+      AND assignee_id = (SELECT auth.uid())
+      AND schedule_at <= now()
+      AND dropped_at IS NULL
+    )
+  );
+
+-- Manager performance totals ignore dropped tasks entirely. They remain in the
+-- task table as auditable exclusions, but never create penalties or credited hours.
+CREATE OR REPLACE FUNCTION app_private.get_manager_performance()
+RETURNS TABLE(
+  manager_id uuid,
+  manager_name text,
+  location text,
+  assigned_tasks integer,
+  completed_tasks integer,
+  delayed_tasks integer,
+  penalty_points integer,
+  performance_score integer
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public', 'app_private', 'auth', 'pg_temp'
+AS $function$
+DECLARE
+  caller_role public.user_role;
+BEGIN
+  caller_role := app_private.current_app_role();
+  IF auth.uid() IS NULL OR caller_role IS NULL THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    p.id,
+    p.full_name,
+    p.location,
+    count(t.id) FILTER (
+      WHERE t.status NOT IN ('cancelled'::public.task_status, 'archived'::public.task_status)
+    )::integer,
+    count(t.id) FILTER (WHERE t.status = 'completed'::public.task_status)::integer,
+    count(t.id) FILTER (
+      WHERE t.status NOT IN ('cancelled'::public.task_status, 'archived'::public.task_status)
+        AND (
+          (t.status = 'completed'::public.task_status AND t.completed_at > t.deadline_at)
+          OR (t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status) AND now() > t.deadline_at)
+        )
+    )::integer,
+    coalesce(sum(CASE
+      WHEN t.status = 'completed'::public.task_status AND t.completed_at > t.deadline_at
+        THEN floor(extract(epoch FROM (t.completed_at - t.deadline_at)) / 86400)::integer * 10
+      WHEN t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status) AND now() > t.deadline_at
+        THEN floor(extract(epoch FROM (now() - t.deadline_at)) / 86400)::integer * 10
+      ELSE 0
+    END), 0)::integer,
+    greatest(0, 100 - coalesce(sum(CASE
+      WHEN t.status = 'completed'::public.task_status AND t.completed_at > t.deadline_at
+        THEN floor(extract(epoch FROM (t.completed_at - t.deadline_at)) / 86400)::integer * 10
+      WHEN t.status IN ('pending'::public.task_status, 'in_progress'::public.task_status) AND now() > t.deadline_at
+        THEN floor(extract(epoch FROM (now() - t.deadline_at)) / 86400)::integer * 10
+      ELSE 0
+    END), 0))::integer
+  FROM public.profiles p
+  LEFT JOIN public.tasks t
+    ON t.assignee_id = p.id
+    AND t.dropped_at IS NULL
+  WHERE p.role = 'manager'::public.user_role
+    AND (caller_role = 'managing_director'::public.user_role OR p.id = auth.uid())
+  GROUP BY p.id, p.full_name, p.location;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION app_private.get_manager_performance() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION app_private.get_manager_performance() TO authenticated;
+
+-- The Manager's completed hours and task totals belong to the scheduled month,
+-- even when the task is completed in a later month.
+CREATE OR REPLACE FUNCTION app_private.get_manager_daily_performance(p_date date)
+RETURNS TABLE(
+  manager_id uuid,
+  manager_name text,
+  location text,
+  selected_date date,
+  completed_tasks integer,
+  completed_hours numeric
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public', 'app_private', 'auth', 'pg_temp'
+AS $function$
+DECLARE
+  caller_role public.user_role;
+  day_begin timestamptz;
+  day_end timestamptz;
+  selected_day date;
+BEGIN
+  caller_role := app_private.current_app_role();
+  IF auth.uid() IS NULL OR caller_role IS NULL OR p_date IS NULL THEN
+    RETURN;
+  END IF;
+  selected_day := p_date;
+  day_begin := selected_day::timestamp AT TIME ZONE 'Asia/Karachi';
+  day_end := (selected_day + 1)::timestamp AT TIME ZONE 'Asia/Karachi';
+
+  RETURN QUERY
+  SELECT p.id, p.full_name, p.location, selected_day,
+    count(t.id)::integer, coalesce(sum(h.target_hours), 0)::numeric(9,2)
+  FROM public.profiles p
+  LEFT JOIN public.tasks t
+    ON t.assignee_id = p.id
+    AND t.status = 'completed'::public.task_status
+    AND t.completed_at >= day_begin
+    AND t.completed_at < day_end
+    AND t.dropped_at IS NULL
+  LEFT JOIN public.task_hour_targets h ON h.task_id = t.id
+  WHERE p.role = 'manager'::public.user_role
+    AND (caller_role = 'managing_director'::public.user_role OR p.id = auth.uid())
+  GROUP BY p.id, p.full_name, p.location;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION app_private.get_manager_daily_performance(date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION app_private.get_manager_daily_performance(date) TO authenticated;
+
+-- Replace the public security-invoker view as well so every manager report
+-- excludes dropped work, even when read through the legacy view.
+CREATE OR REPLACE VIEW public.manager_performance
+WITH (security_invoker = true)
+AS
+SELECT
+  p.id AS manager_id,
+  p.full_name AS manager_name,
+  p.location,
+  count(t.id) FILTER (WHERE t.status NOT IN ('cancelled'::task_status, 'archived'::task_status))::integer AS assigned_tasks,
+  count(t.id) FILTER (WHERE t.status = 'completed'::task_status)::integer AS completed_tasks,
+  count(t.id) FILTER (
+    WHERE t.status NOT IN ('cancelled'::task_status, 'archived'::task_status)
+      AND (
+        (t.status = 'completed'::task_status AND t.completed_at > t.deadline_at)
+        OR (t.status IN ('pending'::task_status, 'in_progress'::task_status) AND now() > t.deadline_at)
+      )
+  )::integer AS delayed_tasks,
+  coalesce(sum(CASE
+    WHEN t.status = 'completed'::task_status AND t.completed_at > t.deadline_at
+      THEN floor(extract(epoch FROM (t.completed_at - t.deadline_at)) / 86400)::integer * 10
+    WHEN t.status IN ('pending'::task_status, 'in_progress'::task_status) AND now() > t.deadline_at
+      THEN floor(extract(epoch FROM (now() - t.deadline_at)) / 86400)::integer * 10
+    ELSE 0
+  END), 0)::integer AS penalty_points,
+  greatest(0, 100 - coalesce(sum(CASE
+    WHEN t.status = 'completed'::task_status AND t.completed_at > t.deadline_at
+      THEN floor(extract(epoch FROM (t.completed_at - t.deadline_at)) / 86400)::integer * 10
+    WHEN t.status IN ('pending'::task_status, 'in_progress'::task_status) AND now() > t.deadline_at
+      THEN floor(extract(epoch FROM (now() - t.deadline_at)) / 86400)::integer * 10
+    ELSE 0
+  END), 0))::integer AS performance_score
+FROM public.profiles p
+LEFT JOIN public.tasks t
+  ON t.assignee_id = p.id
+  AND t.dropped_at IS NULL
+WHERE p.role = 'manager'::user_role
+GROUP BY p.id, p.full_name, p.location;
+
+GRANT SELECT ON public.manager_performance TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
