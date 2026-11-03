@@ -228,3 +228,17 @@ input:focus,textarea:focus,select:focus{box-shadow:var(--ring)}
   .task-modal h2,.team-modal h2{font-size:21px}
   .task-card h3{font-size:13px}
 }
+
+
+/* Managing Director-only task hour controls */
+.inspector-hours-editor{margin:14px 0 17px;padding:13px;border:1px solid #e9dfd6;border-radius:9px;background:#fbf7f2}
+.inspector-hours-copy{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.inspector-hours-copy strong{font-size:11px;color:#403a34}
+.inspector-hours-copy span,.inspector-hours-editor>small{font-size:9px;line-height:1.6;color:#8e857b}
+.inspector-hours-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+.inspector-hours-controls input{width:100%;min-width:0;padding:10px 11px;border:1px solid #e5dcd3;border-radius:7px;background:#fffdfa;color:#38332e;font:inherit;font-size:11px;outline:none}
+.inspector-hours-controls input:focus{border-color:#c88670;box-shadow:0 0 0 2px rgba(200,134,112,.12)}
+.inspector-hours-controls .button{min-height:36px;padding:9px 12px;white-space:nowrap;font-size:10px}
+.inspector-hours-controls .button:disabled{opacity:.6;cursor:wait}
+.inspector-hours-editor>small{display:block;margin-top:8px}
+@media(max-width:420px){.inspector-hours-controls{grid-template-columns:1fr}.inspector-hours-controls .button{width:100%}}
