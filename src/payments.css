@@ -1,0 +1,176 @@
+/* Ediova payment centre — uses the existing workspace green palette. */
+.payment-center{padding:10px 0 36px;color:var(--ink);min-width:0}
+.payment-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:9px;letter-spacing:.15em;font-weight:850;color:#68816d}
+.payment-center-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin:18px 0 25px}
+.payment-center-heading h2{font-size:clamp(27px,3vw,39px);letter-spacing:-.045em;line-height:1.12;margin:10px 0 8px;color:#1d4029}
+.payment-center-heading p{max-width:600px;margin:0;color:#758477;font-size:12px;line-height:1.75}
+.payment-policy-toggle,.payment-button,.payment-icon-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:9px;font-weight:750;transition:transform .2s,background .2s,border-color .2s,box-shadow .2s}
+.payment-policy-toggle{padding:11px 13px;border:1px solid #dce9d8;background:#fff;color:#45664b;font-size:11px;white-space:nowrap}
+.payment-policy-toggle:hover,.payment-button:hover{transform:translateY(-1px)}
+.payment-dashboard-alert{display:flex;align-items:center;gap:13px;width:100%;padding:14px 16px;margin:4px 0 18px;text-align:left;border:1px solid #b9dcae;border-radius:12px;background:#eef8e9;color:#23492e;box-shadow:0 5px 18px #183e2508}
+.payment-manager-alert{border-color:#d8e6c7;background:#f5f8eb}
+.payment-alert-icon{display:grid;place-items:center;width:37px;height:37px;flex:0 0 auto;border-radius:10px;background:#dcefd3;color:#2e7b3d}
+.payment-alert-copy{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.payment-alert-copy strong{font-size:12px}.payment-alert-copy small{color:#738574;font-size:10px}
+.payment-alert-count{display:grid;place-items:center;min-width:26px;height:26px;padding:0 7px;border-radius:30px;background:#2e9b50;color:#fff;font-size:11px;font-weight:850}
+.payment-policy-panel{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;align-items:end;gap:13px;padding:18px;margin:0 0 20px;background:#f2f8ee;border:1px solid #dce9d8;border-radius:13px}
+.payment-policy-panel h3{font-size:17px;margin:6px 0}.payment-policy-panel p{margin:0;color:#7b897b;font-size:10px;line-height:1.6}
+.payment-policy-panel label,.payment-modal label{display:grid;gap:7px;color:#465d4a;font-size:10px;font-weight:800}
+.payment-input-prefix{display:flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #dce8d8;border-radius:8px;background:#fff;color:#5d7c5f}
+.payment-input-prefix input{width:100%;min-width:0;border:0!important;outline:0!important;box-shadow:none!important;padding:10px 0;background:transparent;color:#1d4029;font-size:12px}
+.payment-policy-actions{display:flex;gap:7px}
+.payment-button{min-height:37px;padding:9px 13px;border:1px solid transparent;font-size:10px;white-space:nowrap}
+.payment-button:disabled{opacity:.6;cursor:wait;transform:none}
+.payment-button-primary{background:#286d3a;color:#fff;border-color:#286d3a;box-shadow:0 4px 12px #286d3a20}
+.payment-button-primary:hover{background:#1e5b30;box-shadow:0 6px 15px #286d3a2b}
+.payment-button-light{background:#fff;color:#47634b;border-color:#dce8d8}
+.payment-button-light:hover{background:#f5faf2;border-color:#c7dfbd}
+.payment-button-paid{background:#e4f4dd;color:#286b3a;border-color:#c3e2b7}
+.payment-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:65px 15px;color:#809080;font-size:12px}
+.payment-loading svg{animation:payment-spin 1.5s linear infinite}
+@keyframes payment-spin{to{transform:rotate(360deg)}}
+.payment-director-layout{display:grid;grid-template-columns:minmax(240px, .72fr) minmax(0,1.65fr);align-items:start;gap:17px}
+.payment-record-sidebar,.payment-history-panel,.payment-aside-card{border:1px solid #e0e9dc;border-radius:13px;background:#fff}
+.payment-record-sidebar{padding:15px;position:sticky;top:18px}
+.payment-record-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.payment-record-heading h3{font-size:15px;margin:5px 0 0}
+.payment-record-heading>span{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:#edf5e9;color:#547b56;font-size:10px;font-weight:800}
+.payment-record-row{display:flex;align-items:center;gap:10px;width:100%;padding:11px 8px;border-top:1px solid #eef2eb;text-align:left;background:transparent;border-radius:8px}
+.payment-record-row:hover,.payment-record-row.selected{background:#f4f8f1}
+.payment-record-avatar{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:#e0f0d9;color:#397449;font-size:10px;font-weight:850}
+.payment-record-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}
+.payment-record-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#294c31}
+.payment-record-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#889588;font-size:8px}
+.payment-record-copy em{align-self:flex-start;font-style:normal;font-size:8px}
+.payment-record-row>b{font-size:10px;white-space:nowrap;color:#2e6038}
+.payment-record-empty{display:grid;justify-items:center;gap:7px;padding:28px 12px;text-align:center;color:#91a091}
+.payment-record-empty strong{font-size:11px;color:#536d56}.payment-record-empty span{font-size:9px;line-height:1.5}
+.payment-detail-column{display:grid;gap:13px;min-width:0}
+.payment-selected-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.payment-selected-toolbar>div{display:grid;gap:4px}.payment-selected-toolbar>div>strong{font-size:12px;color:#34553a}
+.payment-review-summary{display:flex;align-items:center;gap:9px;padding:12px 14px;border:1px solid #dfeadd;border-radius:11px;background:#f5f9f2}
+.payment-review-summary>strong{margin-left:auto;font-size:20px;letter-spacing:-.04em;color:#245c32}
+.payment-review-summary>small{font-size:9px;color:#819081}
+.payment-status{display:inline-flex;align-items:center;max-width:max-content;padding:5px 8px;border-radius:30px;font-size:8px;font-weight:850;letter-spacing:.02em;white-space:nowrap}
+.status-requested{background:#fff2d8;color:#946819}.status-revision_requested{background:#fce9df;color:#9d5837}.status-disputed{background:#fbe5e6;color:#a54850}.status-approved{background:#e4f0ff;color:#346397}.status-paid{background:#e5f4df;color:#347545}
+.payment-review-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.payment-history-panel{padding:17px 19px}
+.payment-invoice-section-title{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin:0 0 12px}
+.payment-invoice-section-title h3{font-size:16px;margin:5px 0 0;color:#294b31}
+.payment-invoice-section-title>span{font-size:9px;color:#8c9b8c}
+.payment-timeline-item{display:flex;gap:11px;padding:12px 0;border-top:1px solid #edf2ea}
+.payment-timeline-dot{width:8px;height:8px;flex:0 0 auto;margin:4px 0 0;border-radius:50%;background:#9dbc8f;box-shadow:0 0 0 4px #edf5e9}
+.payment-dot-approved,.payment-dot-paid{background:#329650}.payment-dot-disputed,.payment-dot-revision_requested{background:#d18b54}
+.payment-timeline-item>div{min-width:0}.payment-timeline-item strong{display:block;font-size:10px;color:#36543b}.payment-timeline-item small{display:block;margin-top:4px;color:#8d9a8e;font-size:8px}.payment-timeline-item p{margin:6px 0 0;color:#718273;font-size:9px;line-height:1.6}
+.payment-manager-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(235px,.7fr);gap:17px;align-items:start}
+.payment-manager-main,.payment-manager-aside{display:grid;gap:14px;min-width:0}
+.payment-manager-status-card,.payment-period-card{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:17px 18px;border:1px solid #dfebda;border-radius:13px;background:#f1f8ed}
+.payment-manager-status-card h3,.payment-period-card h3{margin:5px 0 3px;font-size:19px;color:#245332}
+.payment-manager-status-card p,.payment-period-card p{margin:0;color:#839183;font-size:9px}
+.payment-period-icon{display:grid;place-items:center;flex:0 0 44px;height:44px;border-radius:12px;background:#dcefd3;color:#327842}
+.payment-estimate-card{padding:20px;border:1px solid #dce9d8;border-radius:14px;background:#fff;box-shadow:0 8px 26px #1a3d2108}
+.payment-estimate-top{display:flex;justify-content:space-between;align-items:flex-start;gap:15px}
+.payment-estimate-top h3{margin:7px 0 4px;font-size:clamp(31px,4vw,43px);letter-spacing:-.055em;color:#205632;line-height:1}
+.payment-estimate-top small{color:#839183;font-size:9px}
+.payment-estimate-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:12px;background:#e9f5e3;color:#347a45}
+.payment-estimate-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:19px 0 0;padding:15px 0;border-top:1px solid #edf2ea;border-bottom:1px solid #edf2ea}
+.payment-estimate-stats>div{display:grid;gap:5px;min-width:0}
+.payment-estimate-stats span{color:#879488;font-size:8px}.payment-estimate-stats strong{font-size:14px;color:#315a39;overflow-wrap:anywhere}
+.payment-calculation{display:grid;gap:11px;padding:15px 0}
+.payment-calculation>div{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#819081;font-size:10px}
+.payment-calculation>div strong{color:#516b54;font-size:10px;white-space:nowrap}
+.payment-calculation .payment-calculation-total{padding-top:12px;border-top:1px solid #eaf0e7;color:#2d5a36;font-weight:850}
+.payment-calculation-total strong{font-size:17px!important;color:#245b32!important}
+.payment-request-cta{width:100%;height:43px;font-size:11px}
+.payment-request-cta svg:last-child{margin-left:auto}
+.payment-bank-hint{display:flex;gap:11px;padding:14px;border:1px solid #e4ebdf;border-radius:11px;background:#fafcf8;color:#53805c}
+.payment-bank-hint>div{min-width:0}.payment-bank-hint strong{display:block;color:#456249;font-size:10px}.payment-bank-hint p{margin:4px 0 0;color:#899589;font-size:9px;line-height:1.65}
+.payment-aside-card{padding:16px}
+.payment-aside-card h3{margin:7px 0 13px;font-size:16px;color:#2d5236}
+.payment-policy-line{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-top:1px solid #edf2ea;font-size:9px;color:#7f8e80}
+.payment-policy-line strong{color:#315c3a;font-size:10px}
+.payment-aside-card>p{margin:10px 0 0;color:#89968a;font-size:9px;line-height:1.7}
+.payment-privacy-card{display:flex;align-items:flex-start;gap:10px;background:#f7faf4;color:#52805b}
+.payment-privacy-card>div{min-width:0}.payment-privacy-card strong{font-size:10px;color:#48654d}.payment-privacy-card p{margin:5px 0 0;font-size:9px;line-height:1.6;color:#879387}
+.payment-mini-history{display:grid;gap:3px;margin-top:8px}
+.payment-mini-history button{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid #edf2ea;text-align:left;background:transparent}
+.payment-mini-history button span{display:grid;gap:3px}.payment-mini-history button strong{font-size:9px;color:#47604a}.payment-mini-history button small{font-size:8px;color:#98a196}.payment-mini-history button>b{font-size:9px;color:#35653e}
+.payment-inline-note{display:flex;gap:10px;padding:12px;border:1px solid #f1ddc7;background:#fff9f0;color:#9b6b39;border-radius:10px}
+.payment-inline-note strong{font-size:10px}.payment-inline-note p{margin:4px 0 0;font-size:9px;line-height:1.5}
+.payment-invoice-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.payment-empty{display:grid;justify-items:center;gap:9px;text-align:center;padding:45px 18px;border:1px dashed #dce7d8;border-radius:13px;color:#8b9a8b;background:#fbfdf9}
+.payment-empty strong{font-size:12px;color:#536c56}.payment-empty p{max-width:360px;margin:0;font-size:9px;line-height:1.65;color:#89968a}
+.payment-muted{margin:0;padding:9px 0;color:#8c998d;font-size:9px}
+.payment-invoice{background:#fff;border:1px solid #dce7d8;border-radius:13px;padding:clamp(16px,3vw,30px);color:#283e2d;min-width:0;box-shadow:0 8px 28px #173b250b}
+.payment-invoice-top,.payment-invoice-heading,.payment-invoice-parties,.payment-invoice-period,.payment-invoice-summary,.payment-invoice-footer,.payment-invoice-footnote{display:flex;justify-content:space-between;gap:16px}
+.payment-invoice-top{align-items:center;padding-bottom:17px;border-bottom:1px solid #e6eee3}
+.payment-invoice-brand{display:flex;align-items:center;gap:10px}.payment-invoice-brand img{width:37px;height:37px;object-fit:contain}
+.payment-invoice-brand>div{display:grid;gap:3px}.payment-invoice-brand strong{font-size:23px;letter-spacing:-.06em;color:#204a2c}.payment-invoice-brand strong span{color:#319653}
+.payment-invoice-brand small{font-size:7px;letter-spacing:.19em;color:#89988a;font-weight:800}
+.payment-invoice-label{display:grid;justify-items:end;gap:5px}.payment-invoice-label span{font-size:11px;font-weight:900;letter-spacing:.17em;color:#315a39}.payment-invoice-label strong{font-size:8px;color:#879587}
+.payment-invoice-heading{align-items:flex-end;padding:21px 0 16px}
+.payment-invoice-heading h2{margin:5px 0 4px;font-size:32px;letter-spacing:-.06em;color:#1f4a2d}
+.payment-invoice-heading p{margin:0;font-size:9px;color:#8a968a}
+.payment-invoice-number{display:grid;gap:4px;text-align:right}.payment-invoice-number small{font-size:7px;letter-spacing:.11em;color:#8a988a}.payment-invoice-number strong{font-size:11px;color:#2b6039}
+.payment-barcode-block{display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin:-1px 0 15px}
+.payment-barcode-svg{display:block;width:min(100%,250px);height:45px}
+.payment-barcode-block strong{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:8px;letter-spacing:.12em;color:#526853}
+.payment-invoice-parties{padding:15px 0;border-top:1px solid #e8efe5;border-bottom:1px solid #e8efe5}
+.payment-invoice-parties>div{flex:1;min-width:0}.payment-invoice-parties>div:last-child{text-align:right}
+.payment-invoice-parties strong{display:block;margin:6px 0;font-size:11px;color:#33563a}
+.payment-invoice-parties p{margin:0;color:#829083;font-size:8px;line-height:1.8;overflow-wrap:anywhere}
+.payment-invoice-period{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:9px;padding:14px 0}
+.payment-invoice-period>div{display:grid;gap:5px;min-width:0}.payment-invoice-period small{font-size:7px;letter-spacing:.1em;color:#8a988a}
+.payment-invoice-period strong{font-size:9px;color:#3b5940;line-height:1.45}
+.payment-invoice-table-wrap{overflow:auto}
+.payment-invoice-table{width:100%;border-collapse:collapse;min-width:400px}
+.payment-invoice-table th{padding:9px 8px;text-align:left;background:#f2f7ef;color:#748875;font-size:7px;letter-spacing:.11em}
+.payment-invoice-table td{padding:12px 8px;border-bottom:1px solid #edf1ea;font-size:8px;color:#627264;vertical-align:top}
+.payment-invoice-table td strong,.payment-invoice-table td small{display:block}
+.payment-invoice-table td strong{font-size:9px;color:#3d5942}
+.payment-invoice-table td small{margin-top:4px;color:#8e9a8e;font-size:7px}
+.payment-invoice-table .payment-right{text-align:right;white-space:nowrap}
+.payment-invoice-table .payment-right{font-size:9px;font-weight:800;color:#3d6242}
+.payment-deduction-row .payment-right{color:#b15f50}
+.payment-invoice-summary{align-items:center;padding:16px 0;border-bottom:1px solid #e8efe5}
+.payment-performance-stamp{display:flex;align-items:center;gap:9px;color:#4a8054}
+.payment-performance-stamp>span{display:grid;gap:4px}.payment-performance-stamp small{font-size:7px;letter-spacing:.1em;color:#809181}.payment-performance-stamp strong{font-size:21px;color:#2b603a}.payment-performance-stamp em{font-style:normal;font-size:9px;color:#88988a}
+.payment-invoice-total{display:grid;gap:7px;min-width:min(230px,55%)}
+.payment-invoice-total>div{display:flex;justify-content:space-between;gap:12px;font-size:8px;color:#879388}
+.payment-invoice-total strong{color:#526a55;font-size:8px}
+.payment-invoice-total .payment-net-total{padding-top:9px;margin-top:2px;border-top:1px solid #dfe9db;align-items:center;color:#32643d;font-size:8px;font-weight:900;letter-spacing:.08em}
+.payment-invoice-total .payment-net-total strong{font-size:19px;color:#225c32}
+.payment-invoice-breakdown{padding:16px 0 13px}
+.payment-work-list{display:grid}
+.payment-work-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 0;border-top:1px solid #f0f3ee}
+.payment-work-row>span{font-size:8px;color:#9aab99}.payment-work-row>div{display:grid;gap:4px;min-width:0}
+.payment-work-row>div strong{font-size:8px;color:#4b644e;overflow-wrap:anywhere}.payment-work-row>div small{font-size:7px;color:#9aa59a}
+.payment-work-row>b{font-size:8px;color:#57765c;white-space:nowrap}.payment-delay-row>b{color:#b15f50}
+.payment-delayed-title{margin-top:18px}
+.payment-invoice-footer{align-items:center;padding:15px 0;border-top:1px solid #e7eee4}
+.payment-invoice-footer>div:first-child{max-width:75%}.payment-invoice-footer strong{font-size:9px;color:#466348}
+.payment-invoice-footer p{margin:5px 0 0;font-size:7px;color:#929d92;line-height:1.7}
+.payment-invoice-seal{display:grid;justify-items:center;gap:4px;color:#5e8b62;text-align:center}
+.payment-invoice-seal span{font-size:6px;letter-spacing:.15em;font-weight:900;line-height:1.5}
+.payment-invoice-footnote{padding-top:9px;border-top:1px solid #e8eee5;color:#9aa69a;font-size:6px;letter-spacing:.1em}
+.payment-modal-backdrop{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:18px;background:#18332178;backdrop-filter:blur(5px);overflow-y:auto}
+.payment-modal{width:min(100%,470px);max-height:calc(100vh - 36px);overflow:auto;padding:23px;border:1px solid #dfebdb;border-radius:15px;background:#fff;box-shadow:0 25px 80px #132d1d40;display:grid;gap:14px}
+.payment-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:15px}
+.payment-modal-heading h2{font-size:25px;letter-spacing:-.04em;margin:6px 0 0;color:#234c2e}
+.payment-icon-button{width:31px;height:31px;border:1px solid #e2eae0;background:#fff;color:#728373}
+.payment-modal-copy{margin:0;color:#839084;font-size:10px;line-height:1.7}
+.payment-modal form{display:grid;gap:13px}
+.payment-modal label input,.payment-modal label textarea{width:100%;padding:11px 12px;border:1px solid #dce7d8;border-radius:8px;background:#fbfdf9;color:#24442c;font-size:11px;outline:0}
+.payment-modal label textarea{resize:vertical;line-height:1.6}
+.payment-modal label input:focus,.payment-modal label textarea:focus{border-color:#7dbb7f;box-shadow:0 0 0 3px #2e9b5017}
+.payment-modal-safe{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#f3f8ef;border-radius:8px;color:#6a856d;font-size:8px;line-height:1.5}
+.payment-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:4px;flex-wrap:wrap}
+@media(max-width:1100px){.payment-policy-panel{grid-template-columns:1fr 1fr}.payment-policy-panel>div:first-child{grid-column:1/-1}.payment-director-layout{grid-template-columns:minmax(210px,.75fr) minmax(0,1.5fr)}}
+@media(max-width:850px){.payment-director-layout,.payment-manager-layout{grid-template-columns:1fr}.payment-record-sidebar{position:relative;top:auto}.payment-record-row{max-width:100%}.payment-manager-aside{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-manager-aside>.payment-aside-card:last-child{grid-column:1/-1}}
+@media(max-width:620px){.payment-center-heading{align-items:flex-start;flex-direction:column}.payment-policy-panel{grid-template-columns:1fr}.payment-policy-panel>div:first-child{grid-column:auto}.payment-estimate-stats{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:13px}.payment-manager-aside{grid-template-columns:1fr}.payment-manager-aside>.payment-aside-card:last-child{grid-column:auto}.payment-invoice-heading{align-items:flex-start;flex-direction:column}.payment-invoice-number{text-align:left}.payment-invoice-parties{gap:12px}.payment-invoice-period{grid-template-columns:1fr 1fr}.payment-review-summary{flex-wrap:wrap}.payment-review-summary>small{width:100%}.payment-invoice-summary{align-items:flex-start;flex-direction:column}.payment-invoice-total{width:100%}.payment-invoice-footnote{flex-wrap:wrap}.payment-invoice-footer{align-items:flex-start}.payment-record-sidebar{padding:12px}.payment-modal{padding:18px}}
+@media print{
+  body *{visibility:hidden!important}
+  .payment-invoice,.payment-invoice *{visibility:visible!important}
+  .payment-invoice{position:absolute!important;left:0!important;top:0!important;width:100%!important;max-width:none!important;border:0!important;box-shadow:none!important;border-radius:0!important;padding:8mm!important}
+  @page{size:A4;margin:8mm}
+}
