@@ -914,7 +914,10 @@ CREATE POLICY tasks_select_access
       app_private.current_app_role() = 'manager'::public.user_role
       AND assignee_id = (SELECT auth.uid())
       AND schedule_at <= now()
-      AND dropped_at IS NULL
+      AND (
+        dropped_at IS NULL
+        OR (recurrence_parent_id IS NULL AND repeat_unit <> 'none')
+      )
     )
   );
 
