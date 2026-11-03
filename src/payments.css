@@ -336,3 +336,7 @@
 .payment-unfinished-total strong{color:#a54e3d;font-size:11px}
 .payment-unfinished-required{color:#a54e3d;font-size:9px;font-weight:700;line-height:1.5}
 .payment-modal-actions .payment-button:disabled{opacity:.55;cursor:not-allowed}
+
+
+.payment-unfinished-preview-line{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 0;color:#8d7061;font-size:10px}
+.payment-unfinished-preview-line strong{flex:0 0 auto;color:#a65640;font-size:10px}
