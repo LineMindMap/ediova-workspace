@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.manager_payment_requests_manager_month_uidx;
