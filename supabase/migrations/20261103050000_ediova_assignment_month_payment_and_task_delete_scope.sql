@@ -243,8 +243,17 @@ BEGIN
   IF p_month IS NULL OR p_month <> date_trunc('month', p_month::timestamp)::date THEN
     RAISE EXCEPTION 'Choose a valid calendar month.';
   END IF;
-  IF p_month <> (date_trunc('month', now() AT TIME ZONE 'Asia/Karachi') - interval '1 month')::date THEN
-    RAISE EXCEPTION 'Payment requests are opened for the previous completed calendar month.';
+  IF p_month <> (date_trunc('month', now() AT TIME ZONE 'Asia/Karachi') - interval '1 month')::date
+    AND NOT EXISTS (
+      SELECT 1 FROM app_private.manager_payment_month_claims c
+      WHERE c.manager_id = auth.uid() AND c.month_start = p_month AND c.reopen_allowed = true
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM public.manager_payment_requests r
+      WHERE r.manager_id = auth.uid() AND r.month_start = p_month AND r.status = 'revision_requested'
+    )
+  THEN
+    RAISE EXCEPTION 'Choose the previous completed month or a month reopened by the Managing Director.';
   END IF;
 
   SELECT p.full_name INTO v_name
@@ -409,6 +418,7 @@ DECLARE
   v_account text;
   v_opted_out_ids uuid[] := coalesce(p_opted_out_task_ids, ARRAY[]::uuid[]);
   v_matching_ids integer := 0;
+  v_month_claim boolean;
   v_unfinished_deduction numeric(12,2);
   v_late_deduction_total numeric(12,2);
   v_total_deductions numeric(12,2);
@@ -450,9 +460,12 @@ BEGIN
   -- Lock the monthly claim before writing the immutable request snapshot.
   INSERT INTO app_private.manager_payment_month_claims (manager_id, month_start)
   VALUES (auth.uid(), p_month)
-  ON CONFLICT (manager_id, month_start) DO NOTHING;
+  ON CONFLICT (manager_id, month_start) DO UPDATE
+    SET reopen_allowed = false
+    WHERE app_private.manager_payment_month_claims.reopen_allowed = true
+  RETURNING true INTO v_month_claim;
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'A payment request has already been submitted for this month. Open the existing payment record instead.';
+    RAISE EXCEPTION 'A payment request has already been submitted for this month. The Managing Director must reopen the month before another request can be submitted.';
   END IF;
 
   INSERT INTO public.manager_bank_details (profile_id, bank_name, account_holder_name, account_number, updated_at)
