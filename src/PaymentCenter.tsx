@@ -124,7 +124,7 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
       </tbody>
     </table></div>
     <div className="payment-invoice-summary">
-      <div className="payment-performance-stamp"><ShieldCheck size={17} /><span><small>MONTHLY PERFORMANCE</small><strong>{quantity(data.performance_score)}<em>/100</em></strong></span></div>
+      <div className="payment-performance-stamp"><ShieldCheck size={17} /><span><small>PERFORMANCE SCORE</small><strong>{quantity(data.performance_score)}<em>/100</em></strong></span></div>
       <div className="payment-invoice-total"><div><span>Gross amount</span><strong>{amount(data.gross_amount_usd)}</strong></div><div><span>Late-task deductions</span><strong>−{amount(data.deductions_usd)}</strong></div><div className="payment-net-total"><span>EXPECTED PAYMENT</span><strong>{amount(data.net_amount_usd)}</strong></div></div>
     </div>
     <section className="payment-invoice-breakdown">
