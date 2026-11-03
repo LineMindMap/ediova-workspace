@@ -414,7 +414,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     if (error) { notify('The payment status could not be updated: ' + error.message); return; }
     setModal(null);
     setNoteDraft('');
-    notify(action === 'approve' ? 'Payment request approved.' : 'Revision request sent to the Manager.');
+    notify('Revision request sent to the Manager.');
     await refreshAfterAction();
   }
   async function recordPayment(event: FormEvent) {
