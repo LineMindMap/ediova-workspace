@@ -177,3 +177,15 @@
 
 .payment-archive-panel{display:grid;gap:12px;padding-top:17px;border-top:1px solid #e4ece1}
 .payment-mini-history button.active{background:#eff7eb;border-radius:8px;padding-left:8px;padding-right:8px}
+
+
+/* Payment audit additions: payout details, VAT, and compact expandable manager invoices. */
+.payment-toolbar-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.payment-button-danger{background:#fff3f1!important;color:#a33d32!important;border:1px solid #f1d0ca!important}
+.payment-actual-paid-total{padding-top:10px;margin-top:5px;border-top:1px solid #dce7dc;display:flex;justify-content:space-between;gap:18px;color:#244a30;font-weight:850}
+.payment-actual-paid-label{color:#28583b!important;font-weight:800}
+.payment-paid-record{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0;padding:15px;border:1px solid #dce9dc;border-radius:13px;background:#f7fbf6}
+.payment-paid-record>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.payment-paid-record strong{color:#21452d;font-size:17px;overflow-wrap:anywhere}
+.payment-manager-status-card>div small{display:block;margin-top:8px;color:#667b69;font-size:11px;line-height:1.6}
+@media(max-width:640px){.payment-paid-record{grid-template-columns:1fr}.payment-toolbar-actions{width:100%}.payment-toolbar-actions .payment-button{flex:1}}
