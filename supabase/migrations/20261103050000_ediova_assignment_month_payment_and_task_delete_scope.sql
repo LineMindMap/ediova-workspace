@@ -921,6 +921,34 @@ CREATE POLICY tasks_select_access
     )
   );
 
+-- Managers may change only active, non-dropped tasks assigned to themselves.
+-- A dropped recurring source remains readable only so the calendar can continue
+-- showing its future schedule; it cannot be changed by the Manager.
+DROP POLICY IF EXISTS tasks_update_access ON public.tasks;
+CREATE POLICY tasks_update_access
+  ON public.tasks FOR UPDATE TO authenticated
+  USING (
+    app_private.is_managing_director()
+    OR (
+      app_private.current_app_role() = 'manager'::public.user_role
+      AND assignee_id = (SELECT auth.uid())
+      AND schedule_at <= now()
+      AND status = ANY (ARRAY['pending'::task_status, 'in_progress'::task_status])
+      AND dropped_at IS NULL
+    )
+  )
+  WITH CHECK (
+    app_private.is_managing_director()
+    OR (
+      app_private.current_app_role() = 'manager'::public.user_role
+      AND assignee_id = (SELECT auth.uid())
+      AND schedule_at <= now()
+      AND status = ANY (ARRAY['in_progress'::task_status, 'completed'::task_status])
+      AND dropped_at IS NULL
+    )
+  );
+
+
 -- Manager performance totals ignore dropped tasks entirely. They remain in the
 -- task table as auditable exclusions, but never create penalties or credited hours.
 CREATE OR REPLACE FUNCTION app_private.get_manager_performance()
