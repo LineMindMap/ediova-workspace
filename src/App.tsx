@@ -3,7 +3,7 @@ import PaymentCenter from './PaymentCenter';
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronLeft, ChevronRight,
   Clock3, ExternalLink, FileText, LayoutDashboard, Link as LinkIcon, LockKeyhole, LogOut,
-  BarChart3, Bell, BellRing, MessageCircle, NotebookPen, Plus, Repeat, Search, ShieldCheck, Sparkles, Target, Trash2, UserRound, Users, Wallet, X,
+  BarChart3, Bell, BellRing, MessageCircle, MoreHorizontal, NotebookPen, Plus, Repeat, Search, ShieldCheck, Sparkles, Target, Trash2, UserRound, Users, Wallet, X,
   Copy, Save, Share2, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
@@ -250,6 +250,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>(() => safeRead(TASK_KEY, demoTasks));
   const [comments, setComments] = useState<Comment[]>(() => safeRead(COMMENT_KEY, () => []));
   const [view, setView] = useState<View>('dashboard');
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -783,6 +784,8 @@ export default function App() {
   );
 
   const navViews = nav.concat([{ id: 'policies', label: 'Company policies', icon: FileText }, { id: 'privacy', label: 'Privacy & security', icon: ShieldCheck }]);
+  const mobilePrimaryNavViews = navViews.filter(item => ['dashboard', 'tasks', 'calendar', 'payments'].includes(item.id));
+  const mobileMoreNavViews = navViews.filter(item => ['completed', 'performance', 'profile', 'templates', 'policies', 'privacy'].includes(item.id));
   const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', payments: 'Payments', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
   const filteredTemplates = templates.filter(template => (templateCategoryFilter === 'all' || template.category === templateCategoryFilter) && (template.title + ' ' + template.category + ' ' + templatePlainText(template.body_html)).toLowerCase().includes(templateSearch.trim().toLowerCase()));
   const selectedTemplate = filteredTemplates.find(template => template.id === templateSelectedId) || filteredTemplates[0] || null;
@@ -1116,6 +1119,34 @@ export default function App() {
           <div className="modal-actions"><button type="button" className="button button-light" onClick={() => setComposer(false)}>Cancel</button><button className="button button-dark"><Check size={16} /> {editing ? 'Save changes' : 'Schedule task'}</button></div><p className="form-time-note">All times are interpreted as Pakistan Standard Time (UTC+05:00). Tasks automatically start at their scheduled release time; use Start now only to release a task early.</p></form></div>}
       {taskPendingDelete && <div className="confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTaskPendingDelete(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title"><span className="eyebrow">MANAGING DIRECTOR ACTION</span><h2 id="delete-task-title">Delete this task?</h2><p><strong>{taskPendingDelete.title}</strong> will be permanently removed, including its comments, task history, recurrence instances and private hour assignment. This cannot be undone.</p><div className="confirm-actions"><button type="button" className="button button-light" onClick={() => setTaskPendingDelete(null)}>Keep task</button><button type="button" className="button button-danger" onClick={() => void deleteTask(taskPendingDelete)}>Delete permanently</button></div></section></div>}
       {notice && <div className="toast" role="status">{notice}</div>}
+      <nav className="mobile-workspace-nav" aria-label="Workspace navigation">
+        {mobilePrimaryNavViews.map(item => {
+          const Icon = item.icon;
+          const selected = view === item.id;
+          const label = item.id === 'dashboard' ? 'Today' : item.id === 'tasks' ? 'Tasks' : item.label;
+          return <button type="button" key={item.id} className={selected ? 'mobile-nav-item current' : 'mobile-nav-item'} aria-current={selected ? 'page' : undefined} onClick={() => { setView(item.id); setMobileMoreOpen(false); }}>
+            <Icon size={19} strokeWidth={selected ? 2.4 : 1.9} /><span>{label}</span>
+          </button>;
+        })}
+        <button type="button" className={mobileMoreOpen ? 'mobile-nav-item current' : 'mobile-nav-item'} aria-expanded={mobileMoreOpen} aria-controls="mobile-more-menu" onClick={() => setMobileMoreOpen(value => !value)}>
+          <MoreHorizontal size={20} /><span>More</span>
+        </button>
+      </nav>
+      {mobileMoreOpen && <div className="mobile-more-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setMobileMoreOpen(false); }}>
+        <section className="mobile-more-menu" id="mobile-more-menu" role="dialog" aria-modal="true" aria-label="More workspace options">
+          <div className="mobile-more-heading"><div><span className="eyebrow">WORKSPACE MENU</span><strong>{profile?.full_name || 'Ediova member'}</strong></div><button type="button" className="icon-button" aria-label="Close menu" onClick={() => setMobileMoreOpen(false)}><X size={17} /></button></div>
+          <div className="mobile-more-grid">
+            {mobileMoreNavViews.map(item => {
+              const Icon = item.icon;
+              const selected = view === item.id;
+              return <button type="button" key={item.id} className={selected ? 'mobile-more-item current' : 'mobile-more-item'} onClick={() => { setView(item.id); setMobileMoreOpen(false); }}>
+                <Icon size={18} /><span>{item.label}</span>{selected && <Check size={14} />}
+              </button>;
+            })}
+            <button type="button" className="mobile-more-item mobile-more-signout" onClick={() => { setMobileMoreOpen(false); void logout(); }}><LogOut size={18} /><span>Sign out</span></button>
+          </div>
+        </section>
+      </div>}
     </main>
   );
 }
