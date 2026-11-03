@@ -739,3 +739,24 @@ body{background:#f6f9f4;color:var(--ink)}
   .template-document-actions{justify-content:stretch}
   .template-document-actions .button{flex:1}
 }
+
+
+/* Completed tasks are scoped to the selected calendar month. */
+.completed-month-filter{display:flex;align-items:center;gap:9px;color:#8e877e;font-size:10px;font-weight:650;white-space:nowrap}
+.completed-month-filter input{min-height:38px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#fffdfa;color:#49423b;font:inherit;font-size:11px}
+.completed-month-summary{margin:-8px 0 15px;color:#8e877e;font-size:10px}
+.task-delete-scope-modal{max-width:500px}
+.task-delete-scope-options{display:grid;gap:9px;margin:16px 0;padding:12px;border:1px solid #e8dfd7;border-radius:9px;background:#fbf8f4}
+.task-delete-scope-options>div{display:grid;gap:3px}
+.task-delete-scope-options strong{font-size:11px;color:#4a413a}
+.task-delete-scope-options span{font-size:10px;line-height:1.55;color:#91877d}
+.task-delete-scope-actions{flex-wrap:wrap;justify-content:flex-end}
+.task-delete-scope-actions .button{white-space:normal}
+.task-delete-all-button{background:#9f3f32}
+@media(max-width:560px){
+  .day-picker-header{align-items:flex-start;gap:12px;flex-direction:column}
+  .completed-month-filter{width:100%;justify-content:space-between}
+  .completed-month-filter input{flex:1;max-width:190px}
+  .task-delete-scope-actions{display:grid;grid-template-columns:1fr}
+  .task-delete-scope-actions .button{width:100%}
+}
