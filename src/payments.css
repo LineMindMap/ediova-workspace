@@ -231,3 +231,89 @@
 .payment-paid-record .payment-paid-main small{font-size:9px;color:#718273;line-height:1.5}
 .payment-paid-record .payment-secondary-amount{font-size:13px;color:#718273}
 @media(max-width:620px){.payment-amount-presets{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* Payment centre layout refinements for phones and narrow tablets. */
+@media(max-width:850px){
+  .payment-center{padding:6px 0 22px}
+  .payment-center-heading{align-items:flex-start;flex-direction:column;gap:10px;margin:10px 0 18px}
+  .payment-center-heading p{max-width:none}
+  .payment-policy-toggle{align-self:flex-start}
+  .payment-policy-panel{grid-template-columns:minmax(0,1fr)}
+  .payment-policy-panel>div:first-child{grid-column:auto}
+  .payment-director-layout,.payment-manager-layout{grid-template-columns:minmax(0,1fr);gap:12px}
+  .payment-record-sidebar{position:relative;top:auto;max-height:none}
+  .payment-record-row{width:100%;max-width:none}
+  .payment-detail-column,.payment-manager-main,.payment-manager-aside{min-width:0}
+  .payment-manager-aside{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .payment-manager-aside>.payment-aside-card:last-child{grid-column:1/-1}
+  .payment-selected-toolbar{align-items:flex-start;flex-direction:column}
+  .payment-review-summary{flex-wrap:wrap}
+  .payment-review-summary>small{width:100%;line-height:1.5}
+}
+
+@media(max-width:620px){
+  .payment-center-heading h2{font-size:27px}
+  .payment-center-heading p{font-size:11px;line-height:1.65}
+  .payment-policy-panel{padding:14px}
+  .payment-policy-actions{flex-wrap:wrap}
+  .payment-policy-actions .payment-button{flex:1}
+  .payment-reopen-panel,.payment-manager-reopened-panel{padding:13px}
+  .payment-reopen-row{align-items:flex-start;flex-direction:column}
+  .payment-reopen-row .payment-button{width:100%}
+  .payment-manager-reopened-list button{align-items:flex-start;flex-direction:column}
+  .payment-manager-reopened-list button>span:last-child{white-space:normal}
+  .payment-record-sidebar{padding:12px}
+  .payment-record-row{padding:10px 6px}
+  .payment-record-copy strong{font-size:10px}
+  .payment-selected-toolbar .payment-toolbar-actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .payment-toolbar-actions .payment-button{white-space:normal;min-width:0;padding:8px 6px;font-size:9px}
+  .payment-review-actions{justify-content:stretch}
+  .payment-review-actions .payment-button{flex:1 1 145px;white-space:normal;min-height:40px}
+  .payment-history-panel{padding:14px}
+  .payment-review-summary{gap:7px;padding:11px}
+  .payment-review-summary>strong{font-size:19px;margin-left:0;overflow-wrap:anywhere}
+  .payment-manager-status-card,.payment-period-card{align-items:flex-start;padding:14px}
+  .payment-manager-status-card h3,.payment-period-card h3{font-size:17px}
+  .payment-estimate-card{padding:15px}
+  .payment-estimate-top h3{font-size:32px}
+  .payment-estimate-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .payment-calculation>div{align-items:flex-start;font-size:9px}
+  .payment-calculation>div strong{white-space:normal;text-align:right}
+  .payment-invoice{padding:14px;border-radius:10px}
+  .payment-invoice-heading{align-items:flex-start;flex-direction:column;gap:10px}
+  .payment-invoice-heading h2{font-size:27px}
+  .payment-invoice-number{text-align:left}
+  .payment-barcode-block{align-items:flex-start}
+  .payment-invoice-parties{gap:12px;flex-direction:column}
+  .payment-invoice-parties>div:last-child{text-align:left}
+  .payment-invoice-period{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .payment-invoice-table{min-width:440px}
+  .payment-invoice-summary{align-items:flex-start;flex-direction:column;gap:12px}
+  .payment-invoice-total{width:100%;min-width:0}
+  .payment-director-final-total>strong{font-size:27px}
+  .payment-invoice-footer{align-items:flex-start;gap:10px}
+  .payment-invoice-footer>div:first-child{max-width:none}
+  .payment-invoice-seal{flex:0 0 auto}
+  .payment-paid-record{grid-template-columns:minmax(0,1fr);padding:13px}
+  .payment-paid-record>div{min-width:0}
+  .payment-amount-presets{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .payment-modal-backdrop{align-items:flex-end;padding:8px}
+  .payment-modal{width:100%;max-height:calc(100dvh - 16px);padding:17px;border-radius:16px 16px 10px 10px}
+  .payment-modal-heading h2{font-size:22px}
+  .payment-modal-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .payment-modal-actions .payment-button{white-space:normal;min-height:42px}
+  .payment-modal label{min-width:0}
+  .payment-modal label input,.payment-modal label textarea{min-width:0;font-size:16px}
+}
+
+@media(max-width:420px){
+  .payment-invoice-period{grid-template-columns:minmax(0,1fr)}
+  .payment-invoice-table{min-width:420px}
+  .payment-manager-status-card{flex-direction:column}
+  .payment-manager-status-card .payment-status{white-space:normal}
+  .payment-invoice-label{justify-items:start}
+  .payment-invoice-total>div{gap:8px}
+  .payment-modal{padding:15px}
+  .payment-modal-actions{grid-template-columns:minmax(0,1fr)}
+}
