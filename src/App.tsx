@@ -588,6 +588,7 @@ export default function App() {
         return next;
       });
     }
+    if (editing && !warning) setDirectorHourDraft(targetHours === null ? '' : String(targetHours));
     setComposer(false);
     notify(warning || (draft.startNow ? 'Task released and started immediately.' : editing ? 'Task updated.' : 'Task scheduled.'));
   }
