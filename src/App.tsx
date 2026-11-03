@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import PaymentCenter from './PaymentCenter';
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronLeft, ChevronRight,
   Clock3, ExternalLink, FileText, LayoutDashboard, Link as LinkIcon, LockKeyhole, LogOut,
-  BarChart3, Bell, BellRing, MessageCircle, NotebookPen, Plus, Repeat, Search, ShieldCheck, Sparkles, Target, Trash2, UserRound, Users, X,
+  BarChart3, Bell, BellRing, MessageCircle, NotebookPen, Plus, Repeat, Search, ShieldCheck, Sparkles, Target, Trash2, UserRound, Users, Wallet, X,
   Copy, Save, Share2, Bold, Italic, Underline, List, ListOrdered, AlignLeft, AlignCenter,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
@@ -12,7 +13,7 @@ type Role = 'manager' | 'managing_director';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'archived';
 type RepeatUnit = 'none' | 'daily' | 'weekly' | 'monthly';
 type Priority = 'low' | 'normal' | 'high' | 'urgent';
-type View = 'dashboard' | 'tasks' | 'calendar' | 'completed' | 'performance' | 'profile' | 'templates' | 'policies' | 'privacy';
+type View = 'dashboard' | 'tasks' | 'calendar' | 'completed' | 'performance' | 'profile' | 'templates' | 'payments' | 'policies' | 'privacy';
 type Profile = { id: string; full_name: string; role: Role; location?: string | null; experience?: string | null };
 type TeamMember = { id: string; full_name: string; job_title: string; location: string; sort_order: number; profile_id?: string | null };
 type CompanyNotice = { id: string; title: string; body: string; created_by: string; created_at: string; is_active: boolean; expires_at?: string | null };
@@ -465,6 +466,7 @@ export default function App() {
     { id: 'performance', label: 'Performance', icon: BarChart3 },
     { id: 'profile', label: 'Profile', icon: UserRound },
     { id: 'templates', label: 'Templates', icon: NotebookPen },
+    { id: 'payments', label: 'Payments', icon: Wallet },
   ];
 
   async function submitLogin(event: FormEvent) {
@@ -781,7 +783,7 @@ export default function App() {
   );
 
   const navViews = nav.concat([{ id: 'policies', label: 'Company policies', icon: FileText }, { id: 'privacy', label: 'Privacy & security', icon: ShieldCheck }]);
-  const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
+  const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', payments: 'Payments', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
   const filteredTemplates = templates.filter(template => (templateCategoryFilter === 'all' || template.category === templateCategoryFilter) && (template.title + ' ' + template.category + ' ' + templatePlainText(template.body_html)).toLowerCase().includes(templateSearch.trim().toLowerCase()));
   const selectedTemplate = filteredTemplates.find(template => template.id === templateSelectedId) || filteredTemplates[0] || null;
   const filteredComments = activeTask ? comments.filter(c => c.task_id === activeTask.id) : [];
@@ -954,9 +956,10 @@ export default function App() {
   }
   return (
     <main className="workspace-shell">
-      <aside className="sidebar"><a className="brand side-brand" href="#" onClick={e => { e.preventDefault(); setScreen('landing'); }}><img src="./ediova-mark.svg" alt="" /><span>ediova<span className="brand-dot">.</span></span></a><div className="workspace-tag"><span className="status-led" />TEAM WORKSPACE</div><div className="side-section-label">WORKSPACE</div>{navViews.filter(item => ['dashboard', 'tasks', 'calendar', 'completed', 'performance', 'profile', 'templates'].includes(item.id)).map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span>{item.id === 'tasks' && <small>{activeThisMonth.length}</small>}</button>; })}<div className="side-section-label side-spaced">COMPANY</div>{navViews.filter(item => item.id === 'policies' || item.id === 'privacy').map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span></button>; })}<div className="sidebar-bottom"><div className="sidebar-mini-card"><Sparkles size={16} /><strong>Make room<br />for good work.</strong><span>Clarity creates space.</span></div><button className="nav-item" onClick={() => void logout()}><LogOut size={17} /><span>Sign out</span></button><div className="sidebar-user"><div className="user-avatar">{(profile?.full_name || 'E').slice(0, 1)}</div><div><strong>{profile?.full_name || 'Ediova member'}</strong><small>{roleLabel(role)}</small></div><span className="online-dot" /></div></div></aside>
+      <aside className="sidebar"><a className="brand side-brand" href="#" onClick={e => { e.preventDefault(); setScreen('landing'); }}><img src="./ediova-mark.svg" alt="" /><span>ediova<span className="brand-dot">.</span></span></a><div className="workspace-tag"><span className="status-led" />TEAM WORKSPACE</div><div className="side-section-label">WORKSPACE</div>{navViews.filter(item => ['dashboard', 'tasks', 'calendar', 'completed', 'performance', 'profile', 'templates', 'payments'].includes(item.id)).map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span>{item.id === 'tasks' && <small>{activeThisMonth.length}</small>}</button>; })}<div className="side-section-label side-spaced">COMPANY</div>{navViews.filter(item => item.id === 'policies' || item.id === 'privacy').map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span></button>; })}<div className="sidebar-bottom"><div className="sidebar-mini-card"><Sparkles size={16} /><strong>Make room<br />for good work.</strong><span>Clarity creates space.</span></div><button className="nav-item" onClick={() => void logout()}><LogOut size={17} /><span>Sign out</span></button><div className="sidebar-user"><div className="user-avatar">{(profile?.full_name || 'E').slice(0, 1)}</div><div><strong>{profile?.full_name || 'Ediova member'}</strong><small>{roleLabel(role)}</small></div><span className="online-dot" /></div></div></aside>
       <section className="workspace-main"><header className="workspace-topbar"><div><span className="workspace-crumb">EDI OVA <span>/</span> {viewTitle.toUpperCase()}</span><h1>{viewTitle}</h1></div><div className="topbar-right"><div className="today-date"><CalendarDays size={15} /><span>{longDate()}</span></div><button className="team-trigger" onClick={() => setTeamModal(true)}><Users size={15} /> Team <span>{teamDirectory.length}</span></button>{director && <><button className="button button-light notice-trigger" onClick={() => setNoticeComposer(true)}><Bell size={15} /> Post notice</button><button className="button button-dark" onClick={openComposer}><Plus size={17} /> New task</button></>}</div></header>
       {preview && <div className="preview-banner"><Sparkles size={16} /><span><strong>Preview mode</strong> — changes are saved in this browser only. Configure Supabase for shared accounts and cross-device persistence.</span></div>}
+      <PaymentCenter profile={profile} active={view === 'payments'} dashboard={view === 'dashboard'} onOpen={() => setView('payments')} notify={notify} />
 
       {view === 'dashboard' && dashboardNotice && <div className="company-notice"><div className="notice-symbol"><Bell size={16} /></div><div className="notice-copy"><span>COMPANY NOTICE</span><strong>{dashboardNotice.title}</strong><p>{dashboardNotice.body}</p></div>{director && <button className="notice-dismiss" onClick={() => void dismissDashboardNotice()} aria-label="Archive notice">Archive</button>}</div>}
       {view === 'dashboard' && <section className="dashboard-notepad-area" aria-label="Personal Notepad and reminders">
