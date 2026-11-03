@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS manager_payment_month_claims_last_reopened_by_idx ON app_private.manager_payment_month_claims (last_reopened_by);

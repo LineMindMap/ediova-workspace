@@ -189,3 +189,27 @@
 .payment-paid-record strong{color:#21452d;font-size:17px;overflow-wrap:anywhere}
 .payment-manager-status-card>div small{display:block;margin-top:8px;color:#667b69;font-size:11px;line-height:1.6}
 @media(max-width:640px){.payment-paid-record{grid-template-columns:1fr}.payment-toolbar-actions{width:100%}.payment-toolbar-actions .payment-button{flex:1}}
+
+
+/* Director-controlled reopening for a single deleted monthly invoice. */
+.payment-reopen-panel,.payment-manager-reopened-panel{display:grid;gap:12px;margin:0 0 18px;padding:17px 19px;border:1px solid #dfe9dc;border-radius:14px;background:#fbfdf9}
+.payment-reopen-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.payment-reopen-heading h3,.payment-manager-reopened-panel h3{margin:5px 0 4px;color:#183d27;font-size:16px}
+.payment-reopen-heading p,.payment-manager-reopened-panel p{margin:0;color:#6b7c6e;font-size:12px;line-height:1.6;max-width:650px}
+.payment-reopen-heading>span{display:grid;place-items:center;min-width:30px;height:30px;border-radius:9px;background:#edf4e9;color:#315d3b;font-size:12px;font-weight:800}
+.payment-reopen-list,.payment-manager-reopened-list{display:grid;gap:8px}
+.payment-reopen-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px 12px;border:1px solid #e7eee4;border-radius:10px;background:white}
+.payment-reopen-row>div,.payment-manager-reopened-list button>span:first-child{display:grid;gap:3px}
+.payment-reopen-row strong,.payment-manager-reopened-list strong{font-size:13px;color:#24452d}
+.payment-reopen-row span,.payment-manager-reopened-list small{font-size:11px;color:#778679}
+.payment-reopen-row small{display:block;font-size:10px;color:#8a988b}
+.payment-reopen-open{display:inline-flex;align-items:center;gap:6px;padding:7px 9px;border-radius:8px;background:#eef7ec;color:#2c6539!important;font-size:11px!important;font-weight:750}
+.payment-reopen-empty{padding:12px 16px}
+.payment-reopen-empty strong{font-size:12px;color:#657669}
+.payment-manager-reopened-panel{background:#f8fbf6}
+.payment-manager-reopened-list button{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid #e5ede1;border-radius:9px;background:white;text-align:left;cursor:pointer}
+.payment-manager-reopened-list button.selected{border-color:#95b58f;background:#edf6e9}
+.payment-manager-reopened-list button>span:last-child{font-size:11px;font-weight:750;color:#476f46;white-space:nowrap}
+@media(max-width:640px){.payment-reopen-row{align-items:flex-start;flex-direction:column}.payment-reopen-row .payment-button{width:100%}.payment-reopen-heading{align-items:center}}
+
+.payment-return-current{justify-self:start;margin:0 0 10px}
