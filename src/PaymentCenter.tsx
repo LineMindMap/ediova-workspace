@@ -109,6 +109,9 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
   const invoiceNumber = request?.invoice_number || 'Generated when payment is requested';
   const work = (request?.work_breakdown || preview?.work_breakdown || []) as WorkItem[];
   const delays = (request?.delay_breakdown || preview?.delay_breakdown || []) as DelayItem[];
+  const unfinished = (request?.unfinished_breakdown || preview?.unfinished_breakdown || []) as UnfinishedItem[];
+  const unfinishedDeduction = Number(request?.unfinished_deduction_usd ?? preview?.unfinished_deduction_usd ?? 0);
+  const lateDeductionTotal = Number(data.delayed_tasks || 0) * Number(data.late_deduction_usd || 0);
   const bankName = request?.bank_name || '';
   const bankHolder = request?.bank_account_holder || '';
   const bankNumber = request?.bank_account_number || '';
@@ -134,7 +137,8 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
       <thead><tr><th>DESCRIPTION</th><th>QUANTITY</th><th>RATE</th><th className="payment-right">AMOUNT</th></tr></thead>
       <tbody>
         <tr><td><strong>Completed and credited work</strong><small>{quantity(data.completed_tasks)} completed task(s)</small></td><td>{quantity(data.completed_hours)} hrs</td><td>{amount(data.hourly_rate_usd)} / hr</td><td className="payment-right">{amount(data.gross_amount_usd)}</td></tr>
-        <tr className="payment-deduction-row"><td><strong>Late-task deductions</strong><small>{quantity(data.delayed_tasks)} task(s) delayed by more than 24 hours</small></td><td>{quantity(data.delayed_tasks)} task(s)</td><td>{amount(data.late_deduction_usd)} / task</td><td className="payment-right">−{amount(data.deductions_usd)}</td></tr>
+        <tr className="payment-deduction-row"><td><strong>Late-task deductions</strong><small>{quantity(data.delayed_tasks)} task(s) delayed by more than 24 hours</small></td><td>{quantity(data.delayed_tasks)} task(s)</td><td>{amount(data.late_deduction_usd)} / task</td><td className="payment-right">−{amount(lateDeductionTotal)}</td></tr>
+        {unfinished.length > 0 && <tr className="payment-deduction-row"><td><strong>Unfinished-task opt-outs</strong><small>Tasks explicitly excluded from this payment request</small></td><td>{quantity(unfinished.length)} task(s)</td><td>$1.00 / task</td><td className="payment-right">−{amount(unfinishedDeduction)}</td></tr>}
         <tr><td><strong>VAT</strong><small>Fixed at 0.00%</small></td><td>—</td><td>0.00%</td><td className="payment-right">{amount(request?.vat_amount_usd ?? 0)}</td></tr>
       </tbody>
     </table></div>
@@ -148,7 +152,8 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
           {request?.director_payment_reason && <p><b>Director's reason:</b> {request.director_payment_reason}</p>}
         </div>}
         <div><span>Gross amount · USD</span><strong>{amount(data.gross_amount_usd)}</strong></div>
-        <div><span>Late-task deductions · USD</span><strong>−{amount(data.deductions_usd)}</strong></div>
+        <div><span>Late-task deductions · USD</span><strong>−{amount(lateDeductionTotal)}</strong></div>
+        {unfinished.length > 0 && <div><span>Unfinished-task opt-outs · USD</span><strong>−{amount(unfinishedDeduction)}</strong></div>}
         <div><span>VAT · 0.00% · USD</span><strong>{amount(request?.vat_amount_usd ?? 0)}</strong></div>
         <div className={directorPayoutAmount != null ? 'payment-net-total payment-system-reference-total' : 'payment-net-total'}>
           <span>{directorPayoutAmount != null ? 'SYSTEM-SUGGESTED PAYMENT · USD' : 'SYSTEM-SUGGESTED PAYMENT'}</span>
@@ -160,10 +165,11 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
     <section className="payment-invoice-breakdown">
       <div className="payment-invoice-section-title"><div><span className="payment-eyebrow">01 · DELIVERY RECORD</span><h3>Completed work.</h3></div><span>{work.length} entries</span></div>
       {work.length ? <div className="payment-work-list">{work.map((item, index) => <div className="payment-work-row" key={item.task_id || index}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>Completed {formatDateTime(item.completed_at)}</small></div><b>{quantity(item.hours)} hrs</b></div>)}</div> : <p className="payment-muted">No completed tasks were recorded for this month.</p>}
-      <div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">02 · TIMELINE REVIEW</span><h3>Delayed tasks.</h3></div><span>{delays.length} entries</span></div>
+      {unfinished.length > 0 && <><div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">02 · PAYMENT OPT-OUTS</span><h3>Unfinished tasks excluded.</h3></div><span>{unfinished.length} entries</span></div><div className="payment-work-list">{unfinished.map((item, index) => <div className="payment-work-row payment-delay-row" key={item.task_id}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>{item.status === 'in_progress' ? 'In progress' : 'Not started'} · Due {formatDateTime(item.deadline_at)}</small></div><b>−$1.00</b></div>)}</div></>}
+      <div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">03 · TIMELINE REVIEW</span><h3>Delayed tasks.</h3></div><span>{delays.length} entries</span></div>
       {delays.length ? <div className="payment-work-list">{delays.map((item, index) => <div className="payment-work-row payment-delay-row" key={item.task_id || index}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>Deadline {formatDateTime(item.deadline_at)} · {quantity(item.delay_hours)} hours late</small></div><b>−{amount(data.late_deduction_usd)}</b></div>)}</div> : <p className="payment-muted">No task exceeded the 24-hour delay threshold.</p>}
     </section>
-    <div className="payment-invoice-footer"><div><strong>Thank you for your work.</strong><p>This statement preserves the original USD work calculation and displays the Managing Director’s approved PKR payout as the primary amount when set. Payment is recorded as paid only after the transfer has been sent.</p></div><div className="payment-invoice-seal"><BadgeCheck size={24} /><span>EDI OVA<br />ACCOUNTS</span></div></div>
+    <div className="payment-invoice-footer"><div><strong>Thank you for your work.</strong><p>This statement assigns completed work to the month the task was scheduled. Tasks opted out of payment are listed separately and deducted at $1.00 each. The Managing Director’s approved PKR payout is shown as primary when set.</p></div><div className="payment-invoice-seal"><BadgeCheck size={24} /><span>EDI OVA<br />ACCOUNTS</span></div></div>
     <div className="payment-invoice-footnote"><span>EDI OVA INC. · INTERNAL PAYMENT DOCUMENT</span><span>{request?.invoice_number || 'PREVIEW'} · {formatMonth(start)}</span></div>
   </article>;
 }
