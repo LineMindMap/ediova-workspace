@@ -28,6 +28,8 @@ type PaymentRequest = {
 };
 type BankForm = { bank_name: string; account_holder_name: string; account_number: string };
 type PaymentEvent = { id: string; request_id: string; actor_name: string; actor_role: Role; action: string; note: string | null; created_at: string };
+type ReopenableMonth = { manager_id: string; manager_name: string; month_start: string; claimed_at: string; reopen_allowed: boolean; reopen_count: number; last_reopened_at: string | null };
+type ManagerReopenedMonth = { month_start: string; reopen_count: number; last_reopened_at: string | null };
 type Props = { profile: PaymentProfile | null; active: boolean; dashboard: boolean; onOpen: () => void; notify: (message: string) => void };
 
 const EMPTY_BANK: BankForm = { bank_name: '', account_holder_name: '', account_number: '' };
@@ -150,6 +152,9 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const [preview, setPreview] = useState<PaymentPreview | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [monthAlreadySubmitted, setMonthAlreadySubmitted] = useState(false);
+  const [monthReopenAvailable, setMonthReopenAvailable] = useState(false);
+  const [reopenableMonths, setReopenableMonths] = useState<ReopenableMonth[]>([]);
+  const [managerReopenedMonths, setManagerReopenedMonths] = useState<ManagerReopenedMonth[]>([]);
   const [settings, setSettings] = useState<PaymentSettings>({ hourly_rate_usd: 1, late_deduction_usd: 1 });
   const [rateDraft, setRateDraft] = useState('1');
   const [deductionDraft, setDeductionDraft] = useState('1');
@@ -159,7 +164,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const [bankDirty, setBankDirty] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [historicalInvoiceId, setHistoricalInvoiceId] = useState('');
-  const [monthStart] = useState(previousMonthStart);
+  const [monthStart, setMonthStart] = useState(previousMonthStart);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [modal, setModal] = useState<'request' | 'dispute' | 'revision' | 'payment' | null>(null);
@@ -184,14 +189,32 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
       const claimJob = profile.role === 'manager'
         ? client.rpc('manager_payment_month_claimed', { p_month: monthStart })
         : Promise.resolve({ data: false, error: null });
+      const reopenJob = profile.role === 'manager'
+        ? client.rpc('manager_payment_month_reopen_available', { p_month: monthStart })
+        : Promise.resolve({ data: false, error: null });
+      const managerReopenedJob = profile.role === 'manager'
+        ? client.rpc('get_my_reopened_payment_months')
+        : Promise.resolve({ data: [], error: null });
+      const directorReopenJob = profile.role === 'managing_director'
+        ? client.rpc('get_manager_payment_month_reopen_options')
+        : Promise.resolve({ data: [], error: null });
       const jobs = [
         client.from('manager_payment_requests').select('*').order('month_start', { ascending: false }),
         client.from('payment_settings').select('hourly_rate_usd,late_deduction_usd').eq('id', true).maybeSingle(),
-        claimJob
+        claimJob, reopenJob, managerReopenedJob, directorReopenJob
       ] as const;
-      const [requestResult, settingResult, claimResult] = await Promise.all(jobs);
-      if (profile.role === 'manager') setMonthAlreadySubmitted(Boolean(claimResult.data));
+      const [requestResult, settingResult, claimResult, reopenResult, managerReopenedResult, directorReopenResult] = await Promise.all(jobs);
       if (!alive) return;
+      if (profile.role === 'manager') {
+        setMonthAlreadySubmitted(Boolean(claimResult.data));
+        setMonthReopenAvailable(Boolean(reopenResult.data));
+        if (!managerReopenedResult.error) setManagerReopenedMonths((managerReopenedResult.data || []) as ManagerReopenedMonth[]);
+        else notify('Reopened months could not be loaded: ' + managerReopenedResult.error.message);
+      }
+      if (profile.role === 'managing_director') {
+        if (!directorReopenResult.error) setReopenableMonths((directorReopenResult.data || []) as ReopenableMonth[]);
+        else notify('Deleted monthly request records could not be loaded: ' + directorReopenResult.error.message);
+      }
       if (requestResult.error) notify('Payment history could not load: ' + requestResult.error.message);
       else {
         const rows = (requestResult.data || []) as PaymentRequest[];
@@ -254,6 +277,28 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     notify('Your monthly payment request and invoice have been submitted to the Managing Director.');
     await refreshAfterAction();
   }
+  async function reopenPaymentMonth(option: ReopenableMonth) {
+    if (!supabase || !director || option.reopen_allowed) return;
+    const confirmed = window.confirm(
+      'Allow ' + option.manager_name + ' to submit one replacement payment request for ' +
+      formatMonth(option.month_start) + '? The month will lock again immediately after submission.'
+    );
+    if (!confirmed) return;
+    setBusyAction(true);
+    const { error } = await supabase.rpc('reopen_manager_payment_month', {
+      p_manager_id: option.manager_id,
+      p_month: option.month_start
+    });
+    setBusyAction(false);
+    if (error) { notify('This month could not be reopened: ' + error.message); return; }
+    setReopenableMonths(current => current.map(item =>
+      item.manager_id === option.manager_id && item.month_start === option.month_start
+        ? { ...item, reopen_allowed: true, reopen_count: item.reopen_count + 1, last_reopened_at: new Date().toISOString() }
+        : item
+    ));
+    notify(formatMonth(option.month_start) + ' has been reopened for ' + option.manager_name + '. One replacement request is now available.');
+  }
+
   async function refreshAfterAction() {
     const client = supabase;
     if (!client) return;
@@ -375,8 +420,8 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     {dashboard && director && pendingDirector.length > 0 && <button type="button" className="payment-dashboard-alert" onClick={onOpen}>
       <span className="payment-alert-icon"><BellRing size={18} /></span><span className="payment-alert-copy"><strong>Payment approvals need your attention</strong><small>{activeForDashboard} request(s) awaiting review · {awaitingTransfer} approved invoice(s) awaiting transfer</small></span><span className="payment-alert-count">{pendingDirector.length}</span><ChevronRight size={17} />
     </button>}
-    {dashboard && !director && (managerHasAction || managerRequest || monthAlreadySubmitted) && <button type="button" className="payment-dashboard-alert payment-manager-alert" onClick={onOpen}>
-      <span className="payment-alert-icon"><AlertCircle size={18} /></span><span className="payment-alert-copy"><strong>{managerRequest?.status === 'paid' ? 'Your payment has been recorded as paid' : managerRequest?.status === 'approved' ? 'Your payment request has been approved' : managerRequest?.status === 'requested' ? 'Your payment request has been sent to the Director' : monthAlreadySubmitted && !managerRequest ? 'This month has already been submitted' : 'A payment request needs your attention'}</strong><small>{managerRequest ? formatMonth(managerRequest.month_start) + ' · ' + (managerRequest.status === 'paid' && managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : statusLabel(managerRequest.status)) : monthAlreadySubmitted ? formatMonth(monthStart) + ' · This month is locked against duplicate requests.' : 'The Managing Director has requested a revision to your invoice.'}</small></span><ChevronRight size={17} />
+    {dashboard && !director && (managerHasAction || managerRequest || monthAlreadySubmitted || monthReopenAvailable) && <button type="button" className="payment-dashboard-alert payment-manager-alert" onClick={onOpen}>
+      <span className="payment-alert-icon"><AlertCircle size={18} /></span><span className="payment-alert-copy"><strong>{monthReopenAvailable ? 'The Director reopened a month for a replacement request' : managerRequest?.status === 'paid' ? 'Your payment has been recorded as paid' : managerRequest?.status === 'approved' ? 'Your payment request has been approved' : managerRequest?.status === 'requested' ? 'Your payment request has been sent to the Director' : monthAlreadySubmitted && !managerRequest ? 'This month has already been submitted' : 'A payment request needs your attention'}</strong><small>{monthReopenAvailable ? formatMonth(monthStart) + ' · You may submit one replacement request.' : managerRequest ? formatMonth(managerRequest.month_start) + ' · ' + (managerRequest.status === 'paid' && managerRequest.paid_amount != null && managerRequest.paid_currency ? payoutAmount(managerRequest.paid_amount, managerRequest.paid_currency) : statusLabel(managerRequest.status)) : monthAlreadySubmitted ? formatMonth(monthStart) + ' · This month is locked against duplicate requests.' : 'The Managing Director has requested a revision to your invoice.'}</small></span><ChevronRight size={17} />
     </button>}
     {active && <section className="payment-center">
       <header className="payment-center-heading"><div><span className="payment-eyebrow">EDI OVA · FINANCE</span><h2>{director ? 'Payment administration.' : 'Your monthly payment.'}</h2><p>{director ? 'Review submitted invoices, set the payment policy, and record completed transfers.' : 'Review your monthly work summary, request payment, and keep every invoice in one place.'}</p></div>
@@ -389,6 +434,25 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
         <label>Deduction per delayed task (USD)<span className="payment-input-prefix">$<input type="number" min="0" max="1000" step="0.25" value={deductionDraft} onChange={event => setDeductionDraft(event.target.value)} /></span></label>
         <div className="payment-policy-actions"><button type="button" className="payment-button payment-button-light" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="payment-button payment-button-primary" disabled={savingSettings}><Check size={15} /> {savingSettings ? 'Saving…' : 'Save policy'}</button></div>
       </form>}
+      {director && !loading && reopenableMonths.length > 0 && <section className="payment-reopen-panel">
+        <div className="payment-reopen-heading"><div><span className="payment-eyebrow">MANAGING DIRECTOR · MONTH ACCESS</span><h3>Deleted monthly requests.</h3><p>Reopen one specific month to allow its Manager to submit one replacement invoice. A month with an existing invoice cannot be reopened.</p></div><span>{reopenableMonths.length}</span></div>
+        <div className="payment-reopen-list">{reopenableMonths.map(option => <div className="payment-reopen-row" key={option.manager_id + ':' + option.month_start}>
+          <div><strong>{option.manager_name}</strong><span>{formatMonth(option.month_start)} · Previously submitted</span>{option.reopen_count > 0 && <small>Reopened {option.reopen_count} time(s) · {option.last_reopened_at ? formatDateTime(option.last_reopened_at) : 'Awaiting submission'}</small>}</div>
+          {option.reopen_allowed
+            ? <span className="payment-reopen-open"><BadgeCheck size={15} /> Open · awaiting Manager</span>
+            : <button type="button" className="payment-button payment-button-primary" disabled={busyAction} onClick={() => void reopenPaymentMonth(option)}><RefreshCw size={14} /> Allow one replacement request</button>}
+        </div>)}</div>
+      </section>}
+      {director && !loading && reopenableMonths.length === 0 && <section className="payment-reopen-panel payment-reopen-empty">
+        <span className="payment-eyebrow">MONTH ACCESS</span><strong>No deleted monthly requests are waiting to be reopened.</strong>
+      </section>}
+      {!loading && !director && managerReopenedMonths.length > 0 && <section className="payment-manager-reopened-panel">
+        <div><span className="payment-eyebrow">MANAGING DIRECTOR ACCESS</span><h3>Reopened payment months.</h3><p>Your Director has allowed one replacement request for the selected month. After submission, that month will lock again.</p></div>
+        <div className="payment-manager-reopened-list">{managerReopenedMonths.map(option => <button type="button" key={option.month_start} className={monthStart === option.month_start ? 'selected' : ''} onClick={() => setMonthStart(option.month_start)}>
+          <span><strong>{formatMonth(option.month_start)}</strong><small>{option.reopen_count > 1 ? 'Replacement request reopened ' + option.reopen_count + ' times' : 'One replacement request available'}</small></span>
+          <span>{monthStart === option.month_start ? 'Selected' : 'Select month'}</span>
+        </button>)}</div>
+      </section>}
       {loading ? <div className="payment-loading"><RefreshCw size={18} /> Loading payment records…</div> : director ? <div className="payment-director-layout">
         <aside className="payment-record-sidebar">
           <div className="payment-record-heading"><div><span className="payment-eyebrow">INVOICE REGISTER</span><h3>Payment records</h3></div><span>{requests.length}</span></div>
@@ -422,7 +486,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
             </div>
             {historicalInvoiceId === managerRequest.id && <><InvoiceDocument request={managerRequest} managerName={profile.full_name} /><div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{events.filter(event => event.request_id === managerRequest.id).map(event => <EventLabel event={event} key={event.id} />)}</div></>}
           </> : <>
-            <div className="payment-period-card"><div><span className="payment-eyebrow">READY FOR YOUR REQUEST</span><h3>{formatMonth(monthStart)}</h3><p>Payment requests open from the first day of the following month.</p></div><span className="payment-period-icon"><CalendarDays size={22} /></span></div>
+            <div className="payment-period-card"><div><span className="payment-eyebrow">READY FOR YOUR REQUEST</span><h3>{formatMonth(monthStart)}</h3><p>{monthReopenAvailable ? 'The Managing Director reopened this month. You may submit one replacement request; it will lock again after submission.' : 'Payment requests open from the first day of the following month.'}</p></div><span className="payment-period-icon"><CalendarDays size={22} /></span></div>
             {monthAlreadySubmitted && !managerRequest ? <div className="payment-empty"><BadgeCheck size={20} /><strong>This month’s payment request has already been submitted.</strong><p>The Director removed the invoice record, but this month remains locked to prevent a duplicate request. Please contact the Managing Director if the invoice needs to be restored.</p></div> : preview ? <div className="payment-estimate-card"><div className="payment-estimate-top"><div><span className="payment-eyebrow">YOUR ESTIMATED PAYMENT</span><h3>{amount(preview.net_amount_usd)}</h3><small>Subject to the Managing Director’s review</small></div><div className="payment-estimate-icon"><CircleDollarSign size={22} /></div></div>
               <div className="payment-estimate-stats"><div><span>Credited hours</span><strong>{quantity(preview.completed_hours)} hrs</strong></div><div><span>Tasks completed</span><strong>{quantity(preview.completed_tasks)}</strong></div><div><span>Late tasks</span><strong>{quantity(preview.delayed_tasks)}</strong></div><div><span>Performance</span><strong>{quantity(preview.performance_score)}/100</strong></div></div>
               <div className="payment-calculation"><div><span>{quantity(preview.completed_hours)} hours × {amount(preview.hourly_rate_usd)}</span><strong>{amount(preview.gross_amount_usd)}</strong></div><div><span>{quantity(preview.delayed_tasks)} late tasks × {amount(preview.late_deduction_usd)}</span><strong>−{amount(preview.deductions_usd)}</strong></div><div><span>VAT · 0.00%</span><strong>{amount(0)}</strong></div><div className="payment-calculation-total"><span>System-suggested payment</span><strong>{amount(preview.net_amount_usd)}</strong></div></div>
