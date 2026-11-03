@@ -13,7 +13,7 @@ type Role = 'manager' | 'managing_director';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'archived';
 type RepeatUnit = 'none' | 'daily' | 'weekly' | 'monthly';
 type Priority = 'low' | 'normal' | 'high' | 'urgent';
-type View = 'dashboard' | 'tasks' | 'calendar' | 'completed' | 'performance' | 'profile' | 'templates' | 'payments' | 'policies' | 'privacy';
+type View = 'dashboard' | 'tasks' | 'scheduled' | 'calendar' | 'completed' | 'performance' | 'profile' | 'templates' | 'payments' | 'policies' | 'privacy';
 type Profile = { id: string; full_name: string; role: Role; location?: string | null; experience?: string | null };
 type TeamMember = { id: string; full_name: string; job_title: string; location: string; sort_order: number; profile_id?: string | null };
 type CompanyNotice = { id: string; title: string; body: string; created_by: string; created_at: string; is_active: boolean; expires_at?: string | null };
@@ -29,6 +29,7 @@ type Task = {
   repeat_unit?: RepeatUnit; repeat_every?: number; repeat_until?: string | null; recurrence_parent_id?: string | null;
   repeat_monthly_count?: RepeatMonthlyCount; repeat_day_one?: number | null; repeat_day_two?: number | null;
   repeat_weekdays?: number[];
+  dropped_at?: string | null; dropped_by?: string | null; drop_reason?: string | null;
 };
 type Comment = { id: string; task_id: string; author_id: string; body: string; created_at: string; author_name?: string };
 type Draft = { title: string; description: string; scheduled: string; deadline: string; priority: Priority; resource: string; assignee: string; repeatUnit: RepeatUnit; repeatEvery: number; repeatUntil: string; repeatMonthlyCount: RepeatMonthlyCount; repeatDayOne: number; repeatDayTwo: number; repeatDays: number[]; targetHours: string; startNow: boolean };
@@ -446,7 +447,7 @@ export default function App() {
     const timer = window.setInterval(() => void refreshPerformance(), 60000);
     return () => { active = false; window.clearInterval(timer); };
   }, [session, view, performanceMonth, performanceSelectedDate]);
-  const released = useMemo(() => tasks.filter(t => director || new Date(t.scheduled_at).getTime() <= Date.now()), [tasks, director]);
+  const released = useMemo(() => tasks.filter(t => !t.dropped_at && (director || new Date(t.scheduled_at).getTime() <= Date.now())), [tasks, director]);
   const active = released.filter(t => t.status !== 'completed' && t.status !== 'cancelled' && t.status !== 'archived');
   const overdue = active.filter(t => effectiveStatus(t) === 'overdue');
   const currentMonthKey = todayKey().slice(0, 7);
@@ -463,6 +464,8 @@ export default function App() {
       : (a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
   }, [view, completed, activeThisMonth, selectedTaskDay, search, filter]);
   const activeTask = tasks.find(t => t.id === activeTaskId) || null;
+  const recurringSeries = director ? tasks.filter(task => !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none') && task.status !== 'cancelled' && task.status !== 'archived') : [];
+  const seriesChildren = (seriesId: string) => tasks.filter(task => task.recurrence_parent_id === seriesId);
   const pendingDeleteRootId = taskPendingDelete
     ? (taskPendingDelete.recurrence_parent_id || taskPendingDelete.id)
     : null;
@@ -478,6 +481,7 @@ export default function App() {
   const nav: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'tasks', label: 'All tasks', icon: Target },
+    { id: 'scheduled', label: 'Scheduled tasks', icon: Repeat },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'completed', label: 'Completed', icon: Check },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
@@ -516,6 +520,13 @@ export default function App() {
   function startCreate() {
     setEditing(null);
     setDraft({ ...defaultTaskDraft(), assignee: team.find(p => p.role === 'manager')?.id || managerDemo.id });
+    setComposer(true);
+  }
+  function startPlannedRepeatTask() {
+    const base = defaultTaskDraft();
+    const day = Number(base.scheduled.slice(8, 10)) || 1;
+    setEditing(null);
+    setDraft({ ...base, assignee: team.find(p => p.role === 'manager')?.id || managerDemo.id, repeatUnit: 'monthly', repeatEvery: 1, repeatMonthlyCount: 1, repeatDayOne: day });
     setComposer(true);
   }
   function startEdit(task: Task) {
@@ -661,9 +672,18 @@ export default function App() {
     }
     notify(status === 'completed' ? 'Marked complete. Nice work.' : 'Task status updated.');
   }
+  function canDeleteTask(task: Task) {
+    return director || Boolean(profile && task.status === 'completed' && task.assignee_id === profile.id && !task.dropped_at);
+  }
+
   async function deleteTask(task: Task, deleteLinked: boolean) {
-    if (!director) { notify('Only the Managing Director can delete tasks.'); return; }
+    const managerOwnCompleted = Boolean(profile && profile.role === 'manager' && task.assignee_id === profile.id && task.status === 'completed' && !task.dropped_at);
+    if (!director && (!managerOwnCompleted || deleteLinked)) {
+      notify('Managers can delete only their own completed tasks, one task at a time.');
+      return;
+    }
     const rootId = task.recurrence_parent_id || task.id;
+    const retainedSeriesRoot = !deleteLinked && !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none');
     let deletedIds: Set<string>;
 
     if (session && supabase && !task.id.startsWith('local-')) {
@@ -683,16 +703,52 @@ export default function App() {
       deletedIds = new Set(deleteLinked ? familyIds : [task.id]);
     }
 
-    setTasks(prev => prev
-      .filter(item => !deletedIds.has(item.id))
-      .map(item => !deleteLinked && task.id === rootId && item.recurrence_parent_id === rootId
-        ? { ...item, recurrence_parent_id: null, repeat_unit: 'none', repeat_every: 1, repeat_until: null }
+    if (retainedSeriesRoot) {
+      const removedAt = new Date().toISOString();
+      setTasks(prev => prev.map(item => item.id === task.id
+        ? { ...item, dropped_at: removedAt, dropped_by: profile?.id || null, drop_reason: 'Single-task deletion; linked schedule preserved.' }
         : item));
-    setDirectorTaskHours(prev => { const next = { ...prev }; deletedIds.forEach(id => delete next[id]); return next; });
-    setComments(prev => prev.filter(comment => !deletedIds.has(comment.task_id)));
+    } else {
+      setTasks(prev => prev.filter(item => !deletedIds.has(item.id))
+        .map(item => !deleteLinked && task.id === rootId && item.recurrence_parent_id === rootId
+          ? { ...item, recurrence_parent_id: null, repeat_unit: 'none', repeat_every: 1, repeat_until: null }
+          : item));
+      setDirectorTaskHours(prev => { const next = { ...prev }; deletedIds.forEach(id => delete next[id]); return next; });
+      setComments(prev => prev.filter(comment => !deletedIds.has(comment.task_id)));
+    }
     if (activeTaskId && deletedIds.has(activeTaskId)) setActiveTaskId(null);
     setTaskPendingDelete(null);
-    notify(deleteLinked ? 'The task and its linked scheduled occurrences were deleted.' : 'Only the selected task was deleted. Other scheduled occurrences were kept.');
+    notify(deleteLinked ? 'The selected task and its entire linked schedule were deleted.' : retainedSeriesRoot
+      ? 'The selected task was removed from the workload. Its linked schedule remains active.'
+      : 'Only the selected task was deleted. Other linked tasks were kept.');
+  }
+
+  async function dropTask(task: Task) {
+    if (!director || !profile || task.dropped_at) return;
+    const reason = window.prompt('Optional reason for dropping this one task. Linked scheduled tasks will remain unchanged:', '');
+    if (reason === null) return;
+    const cleanReason = reason.trim() || 'Removed from credited workload by the Managing Director.';
+    if (session && supabase && !task.id.startsWith('local-')) {
+      const { error } = await supabase.rpc('drop_ediova_task', { p_task_id: task.id, p_reason: cleanReason });
+      if (error) { notify('This task could not be dropped: ' + error.message); return; }
+    }
+    setTasks(prev => prev.map(item => item.id === task.id
+      ? { ...item, dropped_at: new Date().toISOString(), dropped_by: profile.id, drop_reason: cleanReason }
+      : item));
+    setActiveTaskId(null);
+    notify('Only this task was dropped. Its schedule and linked tasks remain unchanged; it will not count toward hours or penalties.');
+  }
+
+  async function restoreDroppedTask(task: Task) {
+    if (!director || !task.dropped_at) return;
+    if (session && supabase && !task.id.startsWith('local-')) {
+      const { error } = await supabase.rpc('restore_ediova_task', { p_task_id: task.id });
+      if (error) { notify('This task could not be restored: ' + error.message); return; }
+    }
+    setTasks(prev => prev.map(item => item.id === task.id
+      ? { ...item, dropped_at: null, dropped_by: null, drop_reason: null }
+      : item));
+    notify('Task restored. It will count toward work and performance again according to its status and assigned month.');
   }
   async function loadComments(taskId: string) {
     if (!session || !supabase) return;
@@ -864,10 +920,10 @@ export default function App() {
       <p className="login-legal">Use your authorised Ediova account and sign out when you finish on a shared computer. On a trusted device, your active session can take you straight back to the workspace.</p></section><footer className="login-footer"><span>© {new Date().getFullYear()} Ediova</span><a href="mailto:support@ediova.com">Need help? Contact the team</a><button onClick={() => setView('privacy')}>Privacy &amp; security</button></footer></main>
   );
 
-  const navViews = nav.concat([{ id: 'policies', label: 'Company policies', icon: FileText }, { id: 'privacy', label: 'Privacy & security', icon: ShieldCheck }]);
+  const navViews = nav.concat([{ id: 'policies', label: 'Company policies', icon: FileText }, { id: 'privacy', label: 'Privacy & security', icon: ShieldCheck }]).filter(item => director || item.id !== 'scheduled');
   const mobilePrimaryNavViews = navViews.filter(item => ['dashboard', 'tasks', 'calendar', 'payments'].includes(item.id));
-  const mobileMoreNavViews = navViews.filter(item => ['completed', 'performance', 'profile', 'templates', 'policies', 'privacy'].includes(item.id));
-  const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', payments: 'Payments', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
+  const mobileMoreNavViews = navViews.filter(item => ['scheduled', 'completed', 'performance', 'profile', 'templates', 'policies', 'privacy'].includes(item.id));
+  const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', scheduled: 'Scheduled tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', payments: 'Payments', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
   const filteredTemplates = templates.filter(template => (templateCategoryFilter === 'all' || template.category === templateCategoryFilter) && (template.title + ' ' + template.category + ' ' + templatePlainText(template.body_html)).toLowerCase().includes(templateSearch.trim().toLowerCase()));
   const selectedTemplate = filteredTemplates.find(template => template.id === templateSelectedId) || filteredTemplates[0] || null;
   const filteredComments = activeTask ? comments.filter(c => c.task_id === activeTask.id) : [];
