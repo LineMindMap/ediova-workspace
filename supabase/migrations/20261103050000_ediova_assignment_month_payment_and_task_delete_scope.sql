@@ -2,6 +2,11 @@
 -- preserve linked recurrence occurrences when a single task is removed, and require
 -- explicit opt-out for every unfinished task before a monthly payment request is accepted.
 
+ALTER TABLE public.tasks
+  ADD COLUMN IF NOT EXISTS dropped_at timestamptz,
+  ADD COLUMN IF NOT EXISTS dropped_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS drop_reason text;
+
 ALTER TABLE public.manager_payment_requests
   ADD COLUMN IF NOT EXISTS unfinished_tasks_count integer NOT NULL DEFAULT 0
     CHECK (unfinished_tasks_count >= 0),
@@ -733,15 +738,70 @@ NOTIFY pgrst, 'reload schema';
 
 -- Director can explicitly drop one occurrence without changing its status,
 -- siblings, recurring source, schedule generation, or private hour target.
-ALTER TABLE public.tasks
-  ADD COLUMN IF NOT EXISTS dropped_at timestamptz,
-  ADD COLUMN IF NOT EXISTS dropped_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS drop_reason text;
-
 CREATE INDEX IF NOT EXISTS tasks_dropped_by_idx ON public.tasks (dropped_by);
 CREATE INDEX IF NOT EXISTS tasks_assignee_schedule_month_idx
   ON public.tasks (assignee_id, schedule_at)
   WHERE dropped_at IS NULL;
+
+-- A drop must affect only the selected task. Avoid the normal recurring-series
+-- propagation when dropped fields alone change. Also treat weekly weekday changes
+-- as a schedule change so future pending occurrences are regenerated correctly.
+CREATE OR REPLACE FUNCTION public.tasks_sync_recurring_series()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  schedule_changed boolean := false;
+BEGIN
+  IF NEW.recurrence_parent_id IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    IF (to_jsonb(NEW) - ARRAY['dropped_at','dropped_by','drop_reason','updated_at'])
+       IS NOT DISTINCT FROM
+       (to_jsonb(OLD) - ARRAY['dropped_at','dropped_by','drop_reason','updated_at']) THEN
+      RETURN NEW;
+    END IF;
+
+    schedule_changed :=
+      (NEW.schedule_at, NEW.deadline_at, NEW.repeat_unit, NEW.repeat_every, NEW.repeat_until,
+       NEW.repeat_monthly_count, NEW.repeat_day_one, NEW.repeat_day_two, NEW.repeat_weekdays)
+      IS DISTINCT FROM
+      (OLD.schedule_at, OLD.deadline_at, OLD.repeat_unit, OLD.repeat_every, OLD.repeat_until,
+       OLD.repeat_monthly_count, OLD.repeat_day_one, OLD.repeat_day_two, OLD.repeat_weekdays);
+
+    IF schedule_changed THEN
+      UPDATE public.tasks child
+      SET status = 'cancelled',
+          recurrence_parent_id = NULL,
+          notes = concat_ws(E'\\n', nullif(child.notes, ''), 'Superseded by an updated repeat schedule.')
+      WHERE child.recurrence_parent_id = NEW.id
+        AND child.status = 'pending'
+        AND child.schedule_at > now();
+    ELSE
+      UPDATE public.tasks child
+      SET title = NEW.title,
+          description = NEW.description,
+          assignee_id = NEW.assignee_id,
+          created_by = NEW.created_by,
+          priority = NEW.priority,
+          links = NEW.links,
+          notes = NEW.notes
+      WHERE child.recurrence_parent_id = NEW.id
+        AND child.status = 'pending'
+        AND child.schedule_at > now();
+    END IF;
+  END IF;
+
+  IF NEW.repeat_unit <> 'none' THEN
+    PERFORM public.generate_ediova_recurring_tasks();
+  END IF;
+  RETURN NEW;
+END
+$function$;
 
 CREATE OR REPLACE FUNCTION app_private.drop_ediova_task(
   p_task_id uuid,
