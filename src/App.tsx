@@ -254,6 +254,7 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [completedMonth, setCompletedMonth] = useState(() => todayKey().slice(0, 7));
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -450,16 +451,29 @@ export default function App() {
   const overdue = active.filter(t => effectiveStatus(t) === 'overdue');
   const currentMonthKey = todayKey().slice(0, 7);
   const activeThisMonth = active.filter(t => keyFor(t.scheduled_at).slice(0, 7) === currentMonthKey);
-  const completed = released.filter(t => t.status === 'completed').sort((a, b) => new Date(b.completed_at || b.deadline_at).getTime() - new Date(a.completed_at || a.deadline_at).getTime());
+  const completed = released.filter(t => t.status === 'completed' && Boolean(t.completed_at) && keyFor(t.completed_at as string).slice(0, 7) === completedMonth).sort((a, b) => new Date(b.completed_at || b.deadline_at).getTime() - new Date(a.completed_at || a.deadline_at).getTime());
   const visible = useMemo(() => {
     let data = view === 'completed' ? completed : view === 'tasks' ? activeThisMonth.filter(t => dayOffset(t.deadline_at) === selectedTaskDay) : [];
 
     const q = search.trim().toLowerCase();
     if (q) data = data.filter(t => (t.title + ' ' + t.description).toLowerCase().includes(q));
     if (filter !== 'all') data = data.filter(t => effectiveStatus(t) === filter || t.priority === filter);
-    return [...data].sort((a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
+    return [...data].sort(view === 'completed'
+      ? (a, b) => new Date(b.completed_at || b.deadline_at).getTime() - new Date(a.completed_at || a.deadline_at).getTime()
+      : (a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
   }, [view, completed, activeThisMonth, selectedTaskDay, search, filter]);
   const activeTask = tasks.find(t => t.id === activeTaskId) || null;
+  const pendingDeleteRootId = taskPendingDelete
+    ? (taskPendingDelete.recurrence_parent_id || taskPendingDelete.id)
+    : null;
+  const pendingDeleteLinkedTasks = pendingDeleteRootId
+    ? tasks.filter(task => task.id === pendingDeleteRootId || task.recurrence_parent_id === pendingDeleteRootId)
+    : [];
+  const pendingDeleteHasSchedule = Boolean(taskPendingDelete && (
+    taskPendingDelete.recurrence_parent_id ||
+    (taskPendingDelete.repeat_unit && taskPendingDelete.repeat_unit !== 'none') ||
+    pendingDeleteLinkedTasks.length > 1
+  ));
   const todayTasks = active.filter(t => dayOffset(t.scheduled_at) <= 0).sort((a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
   const nav: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -647,19 +661,38 @@ export default function App() {
     }
     notify(status === 'completed' ? 'Marked complete. Nice work.' : 'Task status updated.');
   }
-  async function deleteTask(task: Task) {
+  async function deleteTask(task: Task, deleteLinked: boolean) {
     if (!director) { notify('Only the Managing Director can delete tasks.'); return; }
-    const deletedIds = new Set([task.id, ...tasks.filter(item => item.recurrence_parent_id === task.id).map(item => item.id)]);
-    if (session && supabase) {
-      const { data, error } = await supabase.from('tasks').delete().eq('id', task.id).select('id');
-      if (error || !data?.length) { notify('The task could not be deleted. Refresh and try again; contact support if the issue continues.'); return; }
+    const rootId = task.recurrence_parent_id || task.id;
+    let deletedIds: Set<string>;
+
+    if (session && supabase && !task.id.startsWith('local-')) {
+      const { data, error } = await supabase.rpc('delete_ediova_task', {
+        p_task_id: task.id,
+        p_delete_linked: deleteLinked,
+      });
+      if (error || !Array.isArray(data) || data.length === 0) {
+        notify('The task could not be deleted: ' + (error?.message || 'Refresh and try again.'));
+        return;
+      }
+      deletedIds = new Set(data as string[]);
+    } else {
+      const familyIds = tasks
+        .filter(item => item.id === rootId || item.recurrence_parent_id === rootId)
+        .map(item => item.id);
+      deletedIds = new Set(deleteLinked ? familyIds : [task.id]);
     }
-    setTasks(prev => prev.filter(item => !deletedIds.has(item.id)));
+
+    setTasks(prev => prev
+      .filter(item => !deletedIds.has(item.id))
+      .map(item => !deleteLinked && task.id === rootId && item.recurrence_parent_id === rootId
+        ? { ...item, recurrence_parent_id: null, repeat_unit: 'none', repeat_every: 1, repeat_until: null }
+        : item));
     setDirectorTaskHours(prev => { const next = { ...prev }; deletedIds.forEach(id => delete next[id]); return next; });
     setComments(prev => prev.filter(comment => !deletedIds.has(comment.task_id)));
     if (activeTaskId && deletedIds.has(activeTaskId)) setActiveTaskId(null);
     setTaskPendingDelete(null);
-    notify('Task deleted successfully.');
+    notify(deleteLinked ? 'The task and its linked scheduled occurrences were deleted.' : 'Only the selected task was deleted. Other scheduled occurrences were kept.');
   }
   async function loadComments(taskId: string) {
     if (!session || !supabase) return;
@@ -1042,7 +1075,8 @@ export default function App() {
         <div className="calendar-nudge compact-nudge"><div><CalendarDays size={17} /><div><strong>Explore other dates</strong><span>The calendar holds the complete task schedule.</span></div></div><button className="button button-light" onClick={() => setView('calendar')}>Open calendar <ArrowRight size={15} /></button></div>
       </>}
       {view === 'completed' && <>
-        <div className="day-picker-header"><div><span className="eyebrow">PROGRESS, PRESERVED</span><h2>Completed work</h2><p>Your delivered tasks, without the clutter.</p></div></div>
+        <div className="day-picker-header"><div><span className="eyebrow">PROGRESS, PRESERVED</span><h2>Completed work</h2><p>Tasks completed during the selected calendar month.</p></div><label className="completed-month-filter">Completed in<input type="month" value={completedMonth} onChange={event => setCompletedMonth(event.target.value)} /></label></div>
+        <div className="completed-month-summary">{visible.length} task{visible.length === 1 ? '' : 's'} completed in {completedMonth ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(completedMonth + '-01T12:00:00Z')) : 'the selected month'}.</div>
         <div className="day-task-list task-list-simple">
           {visible.map((task, index) => <TaskCard key={task.id} colorIndex={index} task={task} selected={activeTaskId === task.id} director={director} onOpen={() => openTask(task)} onStatus={status => void setStatus(task, status)} onEdit={() => startEdit(task)} />)}
           {visible.length === 0 && <div className="empty-state"><div className="empty-icon"><Check size={22} /></div><h3>Nothing completed yet.</h3><p>Completed work will appear here.</p></div>}
@@ -1172,7 +1206,7 @@ export default function App() {
             {draft.repeatUnit !== 'none' && <p className="recurrence-note">{draft.repeatUnit === 'weekly' ? 'Select one or more weekdays. The first task is aligned to the next selected day; repeats default to 12:00 AM Pakistan time.' : 'Repeat occurrences preserve the task time and deadline window.'} {draft.repeatUntil ? 'This series ends on the selected date.' : 'No end date is set, so this series repeats indefinitely.'} Future dates appear in Calendar as you navigate ahead; each occurrence becomes a regular task as its month arrives.</p>}
           </div>}
           <div className="modal-actions"><button type="button" className="button button-light" onClick={() => setComposer(false)}>Cancel</button><button className="button button-dark"><Check size={16} /> {editing ? 'Save changes' : 'Schedule task'}</button></div><p className="form-time-note">All times are interpreted as Pakistan Standard Time (UTC+05:00). Tasks automatically start at their scheduled release time; use Start now only to release a task early.</p></form></div>}
-      {taskPendingDelete && <div className="confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTaskPendingDelete(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title"><span className="eyebrow">MANAGING DIRECTOR ACTION</span><h2 id="delete-task-title">Delete this task?</h2><p><strong>{taskPendingDelete.title}</strong> will be permanently removed, including its comments, task history, recurrence instances and private hour assignment. This cannot be undone.</p><div className="confirm-actions"><button type="button" className="button button-light" onClick={() => setTaskPendingDelete(null)}>Keep task</button><button type="button" className="button button-danger" onClick={() => void deleteTask(taskPendingDelete)}>Delete permanently</button></div></section></div>}
+      {taskPendingDelete && <div className="confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTaskPendingDelete(null); }}><section className="confirm-modal task-delete-scope-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title"><span className="eyebrow">MANAGING DIRECTOR ACTION</span><h2 id="delete-task-title">Delete completed task?</h2><p><strong>{taskPendingDelete.title}</strong> will be removed with its comments, history and private hour target. Choose whether other tasks from its schedule should remain.</p>{pendingDeleteHasSchedule && <div className="task-delete-scope-options"><div><strong>Linked schedule found</strong><span>{pendingDeleteLinkedTasks.length} existing task{pendingDeleteLinkedTasks.length === 1 ? '' : 's'} in this series</span></div><div><strong>Delete only this task</strong><span>Keep other scheduled occurrences. If this is the repeating source, no new occurrences will be generated.</span></div><div><strong>Delete the entire linked schedule</strong><span>Remove the repeating source and all existing linked occurrences, including completed ones.</span></div></div>}<div className="confirm-actions task-delete-scope-actions"><button type="button" className="button button-light" onClick={() => setTaskPendingDelete(null)}>Cancel</button><button type="button" className="button button-danger" onClick={() => void deleteTask(taskPendingDelete, false)}>{pendingDeleteHasSchedule ? 'Delete only this task' : 'Delete permanently'}</button>{pendingDeleteHasSchedule && <button type="button" className="button button-danger task-delete-all-button" onClick={() => void deleteTask(taskPendingDelete, true)}>Delete entire linked schedule</button>}</div></section></div>}
       {notice && <div className="toast" role="status">{notice}</div>}
       <nav className="mobile-workspace-nav" aria-label="Workspace navigation">
         {mobilePrimaryNavViews.map(item => {
