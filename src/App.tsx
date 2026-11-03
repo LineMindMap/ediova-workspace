@@ -244,6 +244,8 @@ export default function App() {
   const [performanceCalendarMonth, setPerformanceCalendarMonth] = useState(() => { const p = todayKey().split('-').map(Number); return new Date(p[0], p[1] - 1, 1); });
   const [performanceSelectedDate, setPerformanceSelectedDate] = useState(() => todayKey());
   const [directorTaskHours, setDirectorTaskHours] = useState<Record<string, number>>({});
+  const [directorHourDraft, setDirectorHourDraft] = useState('');
+  const [savingDirectorHours, setSavingDirectorHours] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [team, setTeam] = useState<Profile[]>([]);
@@ -676,7 +678,52 @@ export default function App() {
     }
     setCommentDraft('');
   }
-  function openTask(task: Task) { setActiveTaskId(task.id); if (director || new Date(task.scheduled_at).getTime() <= Date.now()) void loadComments(task.id); }
+  function openTask(task: Task) {
+    setActiveTaskId(task.id);
+    setDirectorHourDraft(directorTaskHours[task.id] == null ? '' : String(directorTaskHours[task.id]));
+    if (director || new Date(task.scheduled_at).getTime() <= Date.now()) void loadComments(task.id);
+  }
+
+  async function saveDirectorTaskHours() {
+    const task = activeTask;
+    if (!director || !profile || !task || savingDirectorHours) return;
+    const rawValue = directorHourDraft.trim();
+    const targetHours = rawValue === '' ? null : Number(rawValue);
+    if (targetHours !== null && (!Number.isFinite(targetHours) || targetHours < 0.25 || targetHours > 1000)) {
+      notify('Assigned hours must be between 0.25 and 1,000.'); return;
+    }
+
+    setSavingDirectorHours(true);
+    try {
+      if (session && supabase && !task.id.startsWith('local-')) {
+        if (targetHours === null) {
+          const { error } = await supabase.from('task_hour_targets').delete().eq('task_id', task.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('task_hour_targets').upsert({
+            task_id: task.id,
+            target_hours: targetHours,
+            set_by: profile.id,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'task_id' });
+          if (error) throw error;
+        }
+      }
+
+      setDirectorTaskHours(previous => {
+        const next = { ...previous };
+        if (targetHours === null) delete next[task.id];
+        else next[task.id] = targetHours;
+        return next;
+      });
+      notify(targetHours === null ? 'Assigned hours cleared.' : 'Assigned hours updated.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      notify('Assigned hours could not be saved: ' + message);
+    } finally {
+      setSavingDirectorHours(false);
+    }
+  }
   function monthShift(direction: number) { setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + direction, 1)); }
   const monthTitle = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(calendarMonth);
   const firstOffset = (new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay() + 6) % 7;
@@ -1001,10 +1048,17 @@ export default function App() {
         </div>
       </>}
       {activeTask && <div className="task-popover-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setActiveTaskId(null); }}>
-        <aside className="task-inspector task-dialog" role="dialog" aria-modal="true">{activeTask ? <><div className="inspector-top"><span className="eyebrow">TASK DETAILS</span><button className="icon-button" aria-label="Close details" onClick={() => setActiveTaskId(null)}><X size={17} /></button></div><h3 className="task-dialog-title">{activeTask.title}</h3><StatusPill value={effectiveStatus(activeTask)} /><p className="inspector-description">{activeTask.description || 'No description has been added.'}</p>{(activeTask.resource_urls?.length ? activeTask.resource_urls : activeTask.resource_url ? [activeTask.resource_url] : []).map((url, index) => <a className="resource-link" key={url + index} href={url} target="_blank" rel="noreferrer"><LinkIcon size={15} /> {resourceHostLabel(url)} <ExternalLink size={13} /></a>)}<div className="inspector-meta"><span><CalendarDays size={15} /> Release</span><strong>{dateLabel(activeTask.scheduled_at, true)}</strong><span><Clock3 size={15} /> Deadline</span><strong className={effectiveStatus(activeTask) === 'overdue' ? 'danger-text' : ''}>{dateLabel(activeTask.deadline_at, true)}</strong><span><Target size={15} /> Priority</span><strong>{priorityLabel(activeTask.priority)}</strong>{director && directorTaskHours[activeTask.id] != null && <><span><Clock3 size={15} /> Planned time</span><strong>{directorTaskHours[activeTask.id]} credited hours</strong></>}{activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && <><span><Repeat size={15} /> Repeats</span><strong>{activeTask.repeat_unit === 'monthly' ? 'Monthly · day ' + (activeTask.repeat_day_one || keyFor(activeTask.scheduled_at).split('-')[2]) + ((activeTask.repeat_monthly_count || 1) === 2 ? ' & ' + activeTask.repeat_day_two : '') : 'Every ' + (activeTask.repeat_every || 1) + ' ' + (activeTask.repeat_unit === 'daily' ? 'day' : 'week') + ((activeTask.repeat_every || 1) > 1 ? 's' : '')}{activeTask.repeat_until ? ' · until ' + dateLabel(activeTask.repeat_until) : ' · ongoing'}</strong></>}</div>{(director || new Date(activeTask.scheduled_at).getTime() <= Date.now()) && activeTask.status !== 'completed' && activeTask.status !== 'cancelled' && <div className="inspector-actions">{director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void startTaskNow(activeTask)}><Clock3 size={15} /> Start now</button>}{!director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}>Start task</button>}<button className="button button-dark" onClick={() => void setStatus(activeTask, 'completed')}><Check size={15} /> Mark complete</button></div>}{director && activeTask.status === 'completed' && <div className="inspector-actions"><button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}><Repeat size={15} /> Reopen task</button></div>}{director && <div className="task-director-actions">{!activeTask.recurrence_parent_id && (!activeTask.repeat_unit || activeTask.repeat_unit === 'none') && activeTask.status !== 'cancelled' && activeTask.status !== 'archived' && <button className="edit-task-link repeat-task-action" onClick={() => startRepeatingTask(activeTask)}><Repeat size={14} /> Make repetitive</button>}<button className="edit-task-link" onClick={() => startEdit(activeTask)}>Edit task <ArrowRight size={14} /></button><button className="delete-task-link" onClick={() => setTaskPendingDelete(activeTask)}><X size={14} /> Delete task</button></div>}{director && activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && !activeTask.recurrence_parent_id && <button className="button button-light schedule-stop-button" onClick={() => void dismantleSchedule(activeTask)}><X size={15} /> Dismantle schedule</button>}<div className="comments-heading"><MessageCircle size={16} /><strong>Team conversation</strong><span>{filteredComments.length}</span></div><div className="comment-list">{filteredComments.map(c => <div className="comment" key={c.id}><div className="comment-avatar">{(c.author_name || 'E').slice(0, 1)}</div><div><strong>{c.author_name || 'Ediova team'}</strong><small>{dateLabel(c.created_at, true)}</small><p>{c.body}</p></div></div>)}{filteredComments.length === 0 && <p className="muted-copy">No comments yet. Leave the first helpful note.</p>}</div><form className="comment-form" onSubmit={addComment}><input value={commentDraft} onChange={e => setCommentDraft(e.target.value)} placeholder="Add a comment…" maxLength={4000} required /><button aria-label="Send comment"><ArrowRight size={16} /></button></form></> : <div className="inspector-empty"><div className="empty-icon"><MessageCircle size={22} /></div><h3>Select a task</h3><p>Open any task to view its brief, dates, resource links and team conversation.</p></div>}</aside>
+        <aside className="task-inspector task-dialog" role="dialog" aria-modal="true">{activeTask ? <><div className="inspector-top"><span className="eyebrow">TASK DETAILS</span><button className="icon-button" aria-label="Close details" onClick={() => setActiveTaskId(null)}><X size={17} /></button></div><h3 className="task-dialog-title">{activeTask.title}</h3><StatusPill value={effectiveStatus(activeTask)} /><p className="inspector-description">{activeTask.description || 'No description has been added.'}</p>{(activeTask.resource_urls?.length ? activeTask.resource_urls : activeTask.resource_url ? [activeTask.resource_url] : []).map((url, index) => <a className="resource-link" key={url + index} href={url} target="_blank" rel="noreferrer"><LinkIcon size={15} /> {resourceHostLabel(url)} <ExternalLink size={13} /></a>)}<div className="inspector-meta"><span><CalendarDays size={15} /> Release</span><strong>{dateLabel(activeTask.scheduled_at, true)}</strong><span><Clock3 size={15} /> Deadline</span><strong className={effectiveStatus(activeTask) === 'overdue' ? 'danger-text' : ''}>{dateLabel(activeTask.deadline_at, true)}</strong><span><Target size={15} /> Priority</span><strong>{priorityLabel(activeTask.priority)}</strong>{director && <><span><Clock3 size={15} /> Assigned hours</span><strong>{directorTaskHours[activeTask.id] == null ? 'Not assigned' : directorTaskHours[activeTask.id] + ' hours'}</strong></>}{activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && <><span><Repeat size={15} /> Repeats</span><strong>{activeTask.repeat_unit === 'monthly' ? 'Monthly · day ' + (activeTask.repeat_day_one || keyFor(activeTask.scheduled_at).split('-')[2]) + ((activeTask.repeat_monthly_count || 1) === 2 ? ' & ' + activeTask.repeat_day_two : '') : 'Every ' + (activeTask.repeat_every || 1) + ' ' + (activeTask.repeat_unit === 'daily' ? 'day' : 'week') + ((activeTask.repeat_every || 1) > 1 ? 's' : '')}{activeTask.repeat_until ? ' · until ' + dateLabel(activeTask.repeat_until) : ' · ongoing'}</strong></>}</div>{director && <section className="inspector-hours-editor" aria-label="Manage assigned task hours">
+          <div className="inspector-hours-copy"><strong>Assigned hours</strong><span>These hours are used when completed work is credited.</span></div>
+          <div className="inspector-hours-controls">
+            <input aria-label="Assigned hours" type="number" min="0.25" max="1000" step="0.25" inputMode="decimal" value={directorHourDraft} onChange={e => setDirectorHourDraft(e.target.value)} placeholder="Enter hours" />
+            <button type="button" className="button button-dark" onClick={() => void saveDirectorTaskHours()} disabled={savingDirectorHours}>{savingDirectorHours ? 'Saving…' : 'Save hours'}</button>
+          </div>
+          <small>Leave the field empty and save to remove the assigned hours.</small>
+        </section>}{(director || new Date(activeTask.scheduled_at).getTime() <= Date.now()) && activeTask.status !== 'completed' && activeTask.status !== 'cancelled' && <div className="inspector-actions">{director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void startTaskNow(activeTask)}><Clock3 size={15} /> Start now</button>}{!director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}>Start task</button>}<button className="button button-dark" onClick={() => void setStatus(activeTask, 'completed')}><Check size={15} /> Mark complete</button></div>}{director && activeTask.status === 'completed' && <div className="inspector-actions"><button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}><Repeat size={15} /> Reopen task</button></div>}{director && <div className="task-director-actions">{!activeTask.recurrence_parent_id && (!activeTask.repeat_unit || activeTask.repeat_unit === 'none') && activeTask.status !== 'cancelled' && activeTask.status !== 'archived' && <button className="edit-task-link repeat-task-action" onClick={() => startRepeatingTask(activeTask)}><Repeat size={14} /> Make repetitive</button>}<button className="edit-task-link" onClick={() => startEdit(activeTask)}>Edit task <ArrowRight size={14} /></button><button className="delete-task-link" onClick={() => setTaskPendingDelete(activeTask)}><X size={14} /> Delete task</button></div>}{director && activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && !activeTask.recurrence_parent_id && <button className="button button-light schedule-stop-button" onClick={() => void dismantleSchedule(activeTask)}><X size={15} /> Dismantle schedule</button>}<div className="comments-heading"><MessageCircle size={16} /><strong>Team conversation</strong><span>{filteredComments.length}</span></div><div className="comment-list">{filteredComments.map(c => <div className="comment" key={c.id}><div className="comment-avatar">{(c.author_name || 'E').slice(0, 1)}</div><div><strong>{c.author_name || 'Ediova team'}</strong><small>{dateLabel(c.created_at, true)}</small><p>{c.body}</p></div></div>)}{filteredComments.length === 0 && <p className="muted-copy">No comments yet. Leave the first helpful note.</p>}</div><form className="comment-form" onSubmit={addComment}><input value={commentDraft} onChange={e => setCommentDraft(e.target.value)} placeholder="Add a comment…" maxLength={4000} required /><button aria-label="Send comment"><ArrowRight size={16} /></button></form></> : <div className="inspector-empty"><div className="empty-icon"><MessageCircle size={22} /></div><h3>Select a task</h3><p>Open any task to view its brief, dates, resource links and team conversation.</p></div>}</aside>
       </div>}
       {view === 'performance' && <section className="performance-page">
-        <div className="performance-heading"><span className="eyebrow">PROGRESS, MADE VISIBLE</span><h2>{director ? 'Manager performance.' : 'Your performance.'}</h2><p>Monthly task completions and credited hours update automatically when completed work is recorded. The Manager sees monthly totals only; task-level hour targets remain private to the Managing Director.</p></div>
+        <div className="performance-heading"><span className="eyebrow">PROGRESS, MADE VISIBLE</span><h2>{director ? 'Manager performance.' : 'Your performance.'}</h2><p>Monthly task completions and credited hours update automatically when completed work is recorded.{director ? ' Assigned hours can be managed from each task detail.' : ''}</p></div>
         <div className="performance-month-filter"><label>Reporting month<input type="month" value={performanceMonth} onChange={e => selectPerformanceMonth(e.target.value)} /></label><span>{new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(performanceMonth + '-01T12:00:00Z'))}</span></div>
         <div className="monthly-output-grid">
           <article className="monthly-output-card monthly-output-green"><span>COMPLETED IN SELECTED MONTH</span><strong>{monthlyPerformanceRows.filter(row => director || row.manager_id === profile?.id).reduce((total, row) => total + Number(row.completed_tasks || 0), 0)}</strong><small>tasks delivered</small></article>
