@@ -790,7 +790,7 @@ BEGIN
       UPDATE public.tasks child
       SET status = 'cancelled',
           recurrence_parent_id = NULL,
-          notes = concat_ws(E'\\n', nullif(child.notes, ''), 'Superseded by an updated repeat schedule.')
+          notes = concat_ws(chr(10), nullif(child.notes, ''), 'Superseded by an updated repeat schedule.')
       WHERE child.recurrence_parent_id = NEW.id
         AND child.status = 'pending'
         AND child.schedule_at > now();
