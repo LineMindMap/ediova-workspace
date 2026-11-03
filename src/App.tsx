@@ -465,6 +465,7 @@ export default function App() {
   }, [view, completed, activeThisMonth, selectedTaskDay, search, filter]);
   const activeTask = tasks.find(t => t.id === activeTaskId) || null;
   const recurringSeries = director ? tasks.filter(task => !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none') && task.status !== 'cancelled' && task.status !== 'archived') : [];
+  const droppedTasks = director ? tasks.filter(task => Boolean(task.dropped_at)).sort((left, right) => new Date(right.dropped_at || '').getTime() - new Date(left.dropped_at || '').getTime()) : [];
   const seriesChildren = (seriesId: string) => tasks.filter(task => task.recurrence_parent_id === seriesId);
   const pendingDeleteRootId = taskPendingDelete
     ? (taskPendingDelete.recurrence_parent_id || taskPendingDelete.id)
@@ -1207,6 +1208,14 @@ export default function App() {
           })}
           {recurringSeries.length === 0 && <div className="empty-state"><div className="empty-icon"><Repeat size={22} /></div><h3>No repeating tasks yet.</h3><p>Create a planned repeated task and manage its future occurrences from this page.</p><button className="button button-dark" onClick={startPlannedRepeatTask}><Plus size={15} /> Add planned repeated task</button></div>}
         </div>
+        {droppedTasks.length > 0 && <section className="scheduled-dropped-register">
+          <div className="scheduled-dropped-heading"><div><span className="eyebrow">MANAGING DIRECTOR ONLY</span><h3>Dropped tasks · excluded from metrics</h3><p>These tasks no longer contribute hours, delays, penalties or payments. Other linked scheduled tasks remain unchanged.</p></div><span>{droppedTasks.length} items</span></div>
+          <div className="scheduled-dropped-list">{droppedTasks.map(task => <article className="scheduled-dropped-row" key={task.id}>
+            <div><strong>{task.title}</strong><small>{dateLabel(task.scheduled_at, true)} · {task.drop_reason || 'Removed from credited workload'}</small></div>
+            <button type="button" className="button button-light" onClick={() => openTask(task)}>Details</button>
+            <button type="button" className="button button-dark" onClick={() => void restoreDroppedTask(task)}><Check size={14} /> Restore</button>
+          </article>)}</div>
+        </section>}
       </section>}
       {view === 'calendar' && <section className="calendar-panel"><div className="calendar-heading"><div><span className="eyebrow">MAKE TIME FOR THE WORK</span><h2>{monthTitle}</h2></div><div className="calendar-paging"><button className="icon-button" onClick={() => monthShift(-1)} aria-label="Previous month"><ChevronLeft /></button><button className="icon-button" onClick={() => setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button><button className="icon-button" onClick={() => monthShift(1)} aria-label="Next month"><ChevronRight /></button></div></div><div className="calendar-week">{['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => <span key={d}>{d}</span>)}</div><div className="calendar-grid">{calendarCells.map((day, i) => { const key = day ? calendarMonth.getFullYear() + '-' + String(calendarMonth.getMonth() + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0') : 'blank-' + i; const items = day ? (calendarEventsByDate[key] || []) : []; return <div className={'calendar-day' + (!day ? ' blank' : '') + (day && key === todayKey() ? ' is-today' : '')} key={key}><span className="calendar-day-num">{day || ''}</span>{items.slice(0, 3).map(item => <button key={item.id} className={'calendar-event ' + (item.isVirtual ? 'event-pending event-series-preview' : effectiveStatus(item.task) === 'overdue' ? 'event-late' : 'event-' + item.task.status)} onClick={() => openTask(item.task)} title={item.isVirtual ? item.task.title + ' · repeating schedule' : item.task.title}>{item.task.title}{item.isVirtual ? ' ↻' : ''}</button>)}{items.length > 3 && <small>+{items.length - 3} more</small>}</div>; })}</div></section>}
       {view === 'templates' && <section className="template-library">
