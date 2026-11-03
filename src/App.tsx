@@ -13,7 +13,7 @@ type Role = 'manager' | 'managing_director';
 type Status = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'archived';
 type RepeatUnit = 'none' | 'daily' | 'weekly' | 'monthly';
 type Priority = 'low' | 'normal' | 'high' | 'urgent';
-type View = 'dashboard' | 'tasks' | 'calendar' | 'completed' | 'performance' | 'profile' | 'templates' | 'payments' | 'policies' | 'privacy';
+type View = 'dashboard' | 'tasks' | 'scheduled' | 'calendar' | 'completed' | 'performance' | 'profile' | 'templates' | 'payments' | 'policies' | 'privacy';
 type Profile = { id: string; full_name: string; role: Role; location?: string | null; experience?: string | null };
 type TeamMember = { id: string; full_name: string; job_title: string; location: string; sort_order: number; profile_id?: string | null };
 type CompanyNotice = { id: string; title: string; body: string; created_by: string; created_at: string; is_active: boolean; expires_at?: string | null };
@@ -29,6 +29,7 @@ type Task = {
   repeat_unit?: RepeatUnit; repeat_every?: number; repeat_until?: string | null; recurrence_parent_id?: string | null;
   repeat_monthly_count?: RepeatMonthlyCount; repeat_day_one?: number | null; repeat_day_two?: number | null;
   repeat_weekdays?: number[];
+  dropped_at?: string | null; dropped_by?: string | null; drop_reason?: string | null;
 };
 type Comment = { id: string; task_id: string; author_id: string; body: string; created_at: string; author_name?: string };
 type Draft = { title: string; description: string; scheduled: string; deadline: string; priority: Priority; resource: string; assignee: string; repeatUnit: RepeatUnit; repeatEvery: number; repeatUntil: string; repeatMonthlyCount: RepeatMonthlyCount; repeatDayOne: number; repeatDayTwo: number; repeatDays: number[]; targetHours: string; startNow: boolean };
@@ -254,6 +255,7 @@ export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [completedMonth, setCompletedMonth] = useState(() => todayKey().slice(0, 7));
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -445,25 +447,42 @@ export default function App() {
     const timer = window.setInterval(() => void refreshPerformance(), 60000);
     return () => { active = false; window.clearInterval(timer); };
   }, [session, view, performanceMonth, performanceSelectedDate]);
-  const released = useMemo(() => tasks.filter(t => director || new Date(t.scheduled_at).getTime() <= Date.now()), [tasks, director]);
+  const released = useMemo(() => tasks.filter(t => !t.dropped_at && (director || new Date(t.scheduled_at).getTime() <= Date.now())), [tasks, director]);
   const active = released.filter(t => t.status !== 'completed' && t.status !== 'cancelled' && t.status !== 'archived');
   const overdue = active.filter(t => effectiveStatus(t) === 'overdue');
   const currentMonthKey = todayKey().slice(0, 7);
   const activeThisMonth = active.filter(t => keyFor(t.scheduled_at).slice(0, 7) === currentMonthKey);
-  const completed = released.filter(t => t.status === 'completed').sort((a, b) => new Date(b.completed_at || b.deadline_at).getTime() - new Date(a.completed_at || a.deadline_at).getTime());
+  const completed = released.filter(t => t.status === 'completed' && Boolean(t.completed_at) && keyFor(t.completed_at as string).slice(0, 7) === completedMonth).sort((a, b) => new Date(b.completed_at || b.deadline_at).getTime() - new Date(a.completed_at || a.deadline_at).getTime());
   const visible = useMemo(() => {
     let data = view === 'completed' ? completed : view === 'tasks' ? activeThisMonth.filter(t => dayOffset(t.deadline_at) === selectedTaskDay) : [];
 
     const q = search.trim().toLowerCase();
     if (q) data = data.filter(t => (t.title + ' ' + t.description).toLowerCase().includes(q));
     if (filter !== 'all') data = data.filter(t => effectiveStatus(t) === filter || t.priority === filter);
-    return [...data].sort((a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
+    return [...data].sort(view === 'completed'
+      ? (a, b) => new Date(b.completed_at || b.deadline_at).getTime() - new Date(a.completed_at || a.deadline_at).getTime()
+      : (a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
   }, [view, completed, activeThisMonth, selectedTaskDay, search, filter]);
   const activeTask = tasks.find(t => t.id === activeTaskId) || null;
+  const recurringSeries = director ? tasks.filter(task => !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none') && task.status !== 'cancelled' && task.status !== 'archived') : [];
+  const droppedTasks = director ? tasks.filter(task => Boolean(task.dropped_at)).sort((left, right) => new Date(right.dropped_at || '').getTime() - new Date(left.dropped_at || '').getTime()) : [];
+  const seriesChildren = (seriesId: string) => tasks.filter(task => task.recurrence_parent_id === seriesId);
+  const pendingDeleteRootId = taskPendingDelete
+    ? (taskPendingDelete.recurrence_parent_id || taskPendingDelete.id)
+    : null;
+  const pendingDeleteLinkedTasks = pendingDeleteRootId
+    ? tasks.filter(task => task.id === pendingDeleteRootId || task.recurrence_parent_id === pendingDeleteRootId)
+    : [];
+  const pendingDeleteHasSchedule = Boolean(taskPendingDelete && (
+    taskPendingDelete.recurrence_parent_id ||
+    (taskPendingDelete.repeat_unit && taskPendingDelete.repeat_unit !== 'none') ||
+    pendingDeleteLinkedTasks.length > 1
+  ));
   const todayTasks = active.filter(t => dayOffset(t.scheduled_at) <= 0).sort((a, b) => new Date(a.deadline_at).getTime() - new Date(b.deadline_at).getTime());
   const nav: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
     { id: 'tasks', label: 'All tasks', icon: Target },
+    { id: 'scheduled', label: 'Scheduled tasks', icon: Repeat },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'completed', label: 'Completed', icon: Check },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
@@ -502,6 +521,13 @@ export default function App() {
   function startCreate() {
     setEditing(null);
     setDraft({ ...defaultTaskDraft(), assignee: team.find(p => p.role === 'manager')?.id || managerDemo.id });
+    setComposer(true);
+  }
+  function startPlannedRepeatTask() {
+    const base = defaultTaskDraft();
+    const day = Number(base.scheduled.slice(8, 10)) || 1;
+    setEditing(null);
+    setDraft({ ...base, assignee: team.find(p => p.role === 'manager')?.id || managerDemo.id, repeatUnit: 'monthly', repeatEvery: 1, repeatMonthlyCount: 1, repeatDayOne: day });
     setComposer(true);
   }
   function startEdit(task: Task) {
@@ -647,19 +673,83 @@ export default function App() {
     }
     notify(status === 'completed' ? 'Marked complete. Nice work.' : 'Task status updated.');
   }
-  async function deleteTask(task: Task) {
-    if (!director) { notify('Only the Managing Director can delete tasks.'); return; }
-    const deletedIds = new Set([task.id, ...tasks.filter(item => item.recurrence_parent_id === task.id).map(item => item.id)]);
-    if (session && supabase) {
-      const { data, error } = await supabase.from('tasks').delete().eq('id', task.id).select('id');
-      if (error || !data?.length) { notify('The task could not be deleted. Refresh and try again; contact support if the issue continues.'); return; }
+  function canDeleteTask(task: Task) {
+    return director || Boolean(profile && task.status === 'completed' && task.assignee_id === profile.id && !task.dropped_at);
+  }
+
+  async function deleteTask(task: Task, deleteLinked: boolean) {
+    const managerOwnCompleted = Boolean(profile && profile.role === 'manager' && task.assignee_id === profile.id && task.status === 'completed' && !task.dropped_at);
+    if (!director && (!managerOwnCompleted || deleteLinked)) {
+      notify('Managers can delete only their own completed tasks, one task at a time.');
+      return;
     }
-    setTasks(prev => prev.filter(item => !deletedIds.has(item.id)));
-    setDirectorTaskHours(prev => { const next = { ...prev }; deletedIds.forEach(id => delete next[id]); return next; });
-    setComments(prev => prev.filter(comment => !deletedIds.has(comment.task_id)));
+    const rootId = task.recurrence_parent_id || task.id;
+    const retainedSeriesRoot = !deleteLinked && !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none');
+    let deletedIds: Set<string>;
+
+    if (session && supabase && !task.id.startsWith('local-')) {
+      const { data, error } = await supabase.rpc('delete_ediova_task', {
+        p_task_id: task.id,
+        p_delete_linked: deleteLinked,
+      });
+      if (error || !Array.isArray(data) || data.length === 0) {
+        notify('The task could not be deleted: ' + (error?.message || 'Refresh and try again.'));
+        return;
+      }
+      deletedIds = new Set(data as string[]);
+    } else {
+      const familyIds = tasks
+        .filter(item => item.id === rootId || item.recurrence_parent_id === rootId)
+        .map(item => item.id);
+      deletedIds = new Set(deleteLinked ? familyIds : [task.id]);
+    }
+
+    if (retainedSeriesRoot) {
+      const removedAt = new Date().toISOString();
+      setTasks(prev => prev.map(item => item.id === task.id
+        ? { ...item, dropped_at: removedAt, dropped_by: profile?.id || null, drop_reason: 'Single-task deletion; linked schedule preserved.' }
+        : item));
+    } else {
+      setTasks(prev => prev.filter(item => !deletedIds.has(item.id))
+        .map(item => !deleteLinked && task.id === rootId && item.recurrence_parent_id === rootId
+          ? { ...item, recurrence_parent_id: null, repeat_unit: 'none', repeat_every: 1, repeat_until: null }
+          : item));
+      setDirectorTaskHours(prev => { const next = { ...prev }; deletedIds.forEach(id => delete next[id]); return next; });
+      setComments(prev => prev.filter(comment => !deletedIds.has(comment.task_id)));
+    }
     if (activeTaskId && deletedIds.has(activeTaskId)) setActiveTaskId(null);
     setTaskPendingDelete(null);
-    notify('Task deleted successfully.');
+    notify(deleteLinked ? 'The selected task and its entire linked schedule were deleted.' : retainedSeriesRoot
+      ? 'The selected task was removed from the workload. Its linked schedule remains active.'
+      : 'Only the selected task was deleted. Other linked tasks were kept.');
+  }
+
+  async function dropTask(task: Task) {
+    if (!director || !profile || task.dropped_at) return;
+    const reason = window.prompt('Optional reason for dropping this one task. Linked scheduled tasks will remain unchanged:', '');
+    if (reason === null) return;
+    const cleanReason = reason.trim() || 'Removed from credited workload by the Managing Director.';
+    if (session && supabase && !task.id.startsWith('local-')) {
+      const { error } = await supabase.rpc('drop_ediova_task', { p_task_id: task.id, p_reason: cleanReason });
+      if (error) { notify('This task could not be dropped: ' + error.message); return; }
+    }
+    setTasks(prev => prev.map(item => item.id === task.id
+      ? { ...item, dropped_at: new Date().toISOString(), dropped_by: profile.id, drop_reason: cleanReason }
+      : item));
+    setActiveTaskId(null);
+    notify('Only this task was dropped. Its schedule and linked tasks remain unchanged; it will not count toward hours or penalties.');
+  }
+
+  async function restoreDroppedTask(task: Task) {
+    if (!director || !task.dropped_at) return;
+    if (session && supabase && !task.id.startsWith('local-')) {
+      const { error } = await supabase.rpc('restore_ediova_task', { p_task_id: task.id });
+      if (error) { notify('This task could not be restored: ' + error.message); return; }
+    }
+    setTasks(prev => prev.map(item => item.id === task.id
+      ? { ...item, dropped_at: null, dropped_by: null, drop_reason: null }
+      : item));
+    notify('Task restored. It will count toward work and performance again according to its status and assigned month.');
   }
   async function loadComments(taskId: string) {
     if (!session || !supabase) return;
@@ -733,7 +823,10 @@ export default function App() {
   const calendarEventsByDate = useMemo(() => {
     const map: Record<string, { id: string; task: Task; isVirtual: boolean; scheduledAt: string }[]> = {};
     const monthKey = calendarMonth.getFullYear() + '-' + String(calendarMonth.getMonth() + 1).padStart(2, '0');
-    const visibleTasks = tasks.filter(task => (director || task.assignee_id === profile?.id) && task.status !== 'cancelled' && task.status !== 'archived');
+    const visibleTasks = tasks.filter(task => !task.dropped_at && (director || task.assignee_id === profile?.id) && task.status !== 'cancelled' && task.status !== 'archived');
+    const scheduleTemplates = tasks.filter(task => (director || task.assignee_id === profile?.id)
+      && task.status !== 'cancelled' && task.status !== 'archived'
+      && !task.recurrence_parent_id && Boolean(task.repeat_unit && task.repeat_unit !== 'none'));
     visibleTasks.filter(task => keyFor(task.scheduled_at).slice(0, 7) === monthKey).forEach(task => {
       const key = keyFor(task.scheduled_at);
       (map[key] ||= []).push({ id: task.id, task, isVirtual: false, scheduledAt: task.scheduled_at });
@@ -744,7 +837,7 @@ export default function App() {
     };
     const anchorKeyFor = (date: Date) => date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
     const today = todayKey();
-    visibleTasks.filter(series => !series.recurrence_parent_id && Boolean(series.repeat_unit && series.repeat_unit !== 'none')).forEach(series => {
+    scheduleTemplates.forEach(series => {
       const startKey = keyFor(series.scheduled_at);
       const endKey = series.repeat_until ? keyFor(series.repeat_until) : null;
       const startDay = dayNumber(startKey);
@@ -831,10 +924,10 @@ export default function App() {
       <p className="login-legal">Use your authorised Ediova account and sign out when you finish on a shared computer. On a trusted device, your active session can take you straight back to the workspace.</p></section><footer className="login-footer"><span>© {new Date().getFullYear()} Ediova</span><a href="mailto:support@ediova.com">Need help? Contact the team</a><button onClick={() => setView('privacy')}>Privacy &amp; security</button></footer></main>
   );
 
-  const navViews = nav.concat([{ id: 'policies', label: 'Company policies', icon: FileText }, { id: 'privacy', label: 'Privacy & security', icon: ShieldCheck }]);
+  const navViews = nav.concat([{ id: 'policies', label: 'Company policies', icon: FileText }, { id: 'privacy', label: 'Privacy & security', icon: ShieldCheck }]).filter(item => director || item.id !== 'scheduled');
   const mobilePrimaryNavViews = navViews.filter(item => ['dashboard', 'tasks', 'calendar', 'payments'].includes(item.id));
-  const mobileMoreNavViews = navViews.filter(item => ['completed', 'performance', 'profile', 'templates', 'policies', 'privacy'].includes(item.id));
-  const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', payments: 'Payments', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
+  const mobileMoreNavViews = navViews.filter(item => ['scheduled', 'completed', 'performance', 'profile', 'templates', 'policies', 'privacy'].includes(item.id));
+  const viewTitle = ({ dashboard: 'Today', tasks: 'All tasks', scheduled: 'Scheduled tasks', calendar: 'Calendar', completed: 'Completed work', performance: 'Manager performance', profile: 'Your profile', templates: 'Templates', payments: 'Payments', policies: 'Company policies', privacy: 'Privacy & security' } as Record<View, string>)[view];
   const filteredTemplates = templates.filter(template => (templateCategoryFilter === 'all' || template.category === templateCategoryFilter) && (template.title + ' ' + template.category + ' ' + templatePlainText(template.body_html)).toLowerCase().includes(templateSearch.trim().toLowerCase()));
   const selectedTemplate = filteredTemplates.find(template => template.id === templateSelectedId) || filteredTemplates[0] || null;
   const filteredComments = activeTask ? comments.filter(c => c.task_id === activeTask.id) : [];
@@ -1007,7 +1100,7 @@ export default function App() {
   }
   return (
     <main className="workspace-shell">
-      <aside className="sidebar"><a className="brand side-brand" href="#" onClick={e => { e.preventDefault(); setScreen('landing'); }}><img src="./ediova-mark.svg" alt="" /><span>ediova<span className="brand-dot">.</span></span></a><div className="workspace-tag"><span className="status-led" />TEAM WORKSPACE</div><div className="side-section-label">WORKSPACE</div>{navViews.filter(item => ['dashboard', 'tasks', 'calendar', 'completed', 'performance', 'profile', 'templates', 'payments'].includes(item.id)).map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span>{item.id === 'tasks' && <small>{activeThisMonth.length}</small>}</button>; })}<div className="side-section-label side-spaced">COMPANY</div>{navViews.filter(item => item.id === 'policies' || item.id === 'privacy').map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span></button>; })}<div className="sidebar-bottom"><div className="sidebar-mini-card"><Sparkles size={16} /><strong>Make room<br />for good work.</strong><span>Clarity creates space.</span></div><button className="nav-item" onClick={() => void logout()}><LogOut size={17} /><span>Sign out</span></button><div className="sidebar-user"><div className="user-avatar">{(profile?.full_name || 'E').slice(0, 1)}</div><div><strong>{profile?.full_name || 'Ediova member'}</strong><small>{roleLabel(role)}</small></div><span className="online-dot" /></div></div></aside>
+      <aside className="sidebar"><a className="brand side-brand" href="#" onClick={e => { e.preventDefault(); setScreen('landing'); }}><img src="./ediova-mark.svg" alt="" /><span>ediova<span className="brand-dot">.</span></span></a><div className="workspace-tag"><span className="status-led" />TEAM WORKSPACE</div><div className="side-section-label">WORKSPACE</div>{navViews.filter(item => ['dashboard', 'tasks', 'scheduled', 'calendar', 'completed', 'performance', 'profile', 'templates', 'payments'].includes(item.id)).map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span>{item.id === 'tasks' && <small>{activeThisMonth.length}</small>}</button>; })}<div className="side-section-label side-spaced">COMPANY</div>{navViews.filter(item => item.id === 'policies' || item.id === 'privacy').map(item => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? 'nav-item current' : 'nav-item'} onClick={() => setView(item.id)}><Icon size={17} /><span>{item.label}</span></button>; })}<div className="sidebar-bottom"><div className="sidebar-mini-card"><Sparkles size={16} /><strong>Make room<br />for good work.</strong><span>Clarity creates space.</span></div><button className="nav-item" onClick={() => void logout()}><LogOut size={17} /><span>Sign out</span></button><div className="sidebar-user"><div className="user-avatar">{(profile?.full_name || 'E').slice(0, 1)}</div><div><strong>{profile?.full_name || 'Ediova member'}</strong><small>{roleLabel(role)}</small></div><span className="online-dot" /></div></div></aside>
       <section className="workspace-main"><header className="workspace-topbar"><div><span className="workspace-crumb">EDI OVA <span>/</span> {viewTitle.toUpperCase()}</span><h1>{viewTitle}</h1></div><div className="topbar-right"><div className="today-date"><CalendarDays size={15} /><span>{longDate()}</span></div><button className="team-trigger" onClick={() => setTeamModal(true)}><Users size={15} /> Team <span>{teamDirectory.length}</span></button>{director && <><button className="button button-light notice-trigger" onClick={() => setNoticeComposer(true)}><Bell size={15} /> Post notice</button><button className="button button-dark" onClick={openComposer}><Plus size={17} /> New task</button></>}</div></header>
       {preview && <div className="preview-banner"><Sparkles size={16} /><span><strong>Preview mode</strong> — changes are saved in this browser only. Configure Supabase for shared accounts and cross-device persistence.</span></div>}
       <PaymentCenter profile={profile} active={view === 'payments'} dashboard={view === 'dashboard'} onOpen={() => setView('payments')} notify={notify} />
@@ -1042,21 +1135,22 @@ export default function App() {
         <div className="calendar-nudge compact-nudge"><div><CalendarDays size={17} /><div><strong>Explore other dates</strong><span>The calendar holds the complete task schedule.</span></div></div><button className="button button-light" onClick={() => setView('calendar')}>Open calendar <ArrowRight size={15} /></button></div>
       </>}
       {view === 'completed' && <>
-        <div className="day-picker-header"><div><span className="eyebrow">PROGRESS, PRESERVED</span><h2>Completed work</h2><p>Your delivered tasks, without the clutter.</p></div></div>
+        <div className="day-picker-header"><div><span className="eyebrow">PROGRESS, PRESERVED</span><h2>Completed work</h2><p>Tasks completed during the selected calendar month.</p></div><label className="completed-month-filter">Completed in<input type="month" value={completedMonth} onChange={event => setCompletedMonth(event.target.value)} /></label></div>
+        <div className="completed-month-summary">{visible.length} task{visible.length === 1 ? '' : 's'} completed in {completedMonth ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(completedMonth + '-01T12:00:00Z')) : 'the selected month'}.</div>
         <div className="day-task-list task-list-simple">
           {visible.map((task, index) => <TaskCard key={task.id} colorIndex={index} task={task} selected={activeTaskId === task.id} director={director} onOpen={() => openTask(task)} onStatus={status => void setStatus(task, status)} onEdit={() => startEdit(task)} />)}
           {visible.length === 0 && <div className="empty-state"><div className="empty-icon"><Check size={22} /></div><h3>Nothing completed yet.</h3><p>Completed work will appear here.</p></div>}
         </div>
       </>}
       {activeTask && <div className="task-popover-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setActiveTaskId(null); }}>
-        <aside className="task-inspector task-dialog" role="dialog" aria-modal="true">{activeTask ? <><div className="inspector-top"><span className="eyebrow">TASK DETAILS</span><button className="icon-button" aria-label="Close details" onClick={() => setActiveTaskId(null)}><X size={17} /></button></div><h3 className="task-dialog-title">{activeTask.title}</h3><StatusPill value={effectiveStatus(activeTask)} /><p className="inspector-description">{activeTask.description || 'No description has been added.'}</p>{(activeTask.resource_urls?.length ? activeTask.resource_urls : activeTask.resource_url ? [activeTask.resource_url] : []).map((url, index) => <a className="resource-link" key={url + index} href={url} target="_blank" rel="noreferrer"><LinkIcon size={15} /> {resourceHostLabel(url)} <ExternalLink size={13} /></a>)}<div className="inspector-meta"><span><CalendarDays size={15} /> Release</span><strong>{dateLabel(activeTask.scheduled_at, true)}</strong><span><Clock3 size={15} /> Deadline</span><strong className={effectiveStatus(activeTask) === 'overdue' ? 'danger-text' : ''}>{dateLabel(activeTask.deadline_at, true)}</strong><span><Target size={15} /> Priority</span><strong>{priorityLabel(activeTask.priority)}</strong>{director && <><span><Clock3 size={15} /> Assigned hours</span><strong>{directorTaskHours[activeTask.id] == null ? 'Not assigned' : directorTaskHours[activeTask.id] + ' hours'}</strong></>}{activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && <><span><Repeat size={15} /> Repeats</span><strong>{activeTask.repeat_unit === 'monthly' ? 'Monthly · day ' + (activeTask.repeat_day_one || keyFor(activeTask.scheduled_at).split('-')[2]) + ((activeTask.repeat_monthly_count || 1) === 2 ? ' & ' + activeTask.repeat_day_two : '') : 'Every ' + (activeTask.repeat_every || 1) + ' ' + (activeTask.repeat_unit === 'daily' ? 'day' : 'week') + ((activeTask.repeat_every || 1) > 1 ? 's' : '')}{activeTask.repeat_until ? ' · until ' + dateLabel(activeTask.repeat_until) : ' · ongoing'}</strong></>}</div>{director && <section className="inspector-hours-editor" aria-label="Manage assigned task hours">
+        <aside className="task-inspector task-dialog" role="dialog" aria-modal="true">{activeTask ? <><div className="inspector-top"><span className="eyebrow">TASK DETAILS</span><button className="icon-button" aria-label="Close details" onClick={() => setActiveTaskId(null)}><X size={17} /></button></div><h3 className="task-dialog-title">{activeTask.title}</h3><StatusPill value={activeTask.dropped_at ? 'dropped' : effectiveStatus(activeTask)} />{activeTask.dropped_at && <div className="task-dropped-note"><strong>Excluded from credited work</strong><span>This task does not count toward assigned hours, delayed-task penalties or payment totals. Linked tasks and the repeating schedule are unchanged.</span>{activeTask.drop_reason && <small>Reason: {activeTask.drop_reason}</small>}</div>}<p className="inspector-description">{activeTask.description || 'No description has been added.'}</p>{(activeTask.resource_urls?.length ? activeTask.resource_urls : activeTask.resource_url ? [activeTask.resource_url] : []).map((url, index) => <a className="resource-link" key={url + index} href={url} target="_blank" rel="noreferrer"><LinkIcon size={15} /> {resourceHostLabel(url)} <ExternalLink size={13} /></a>)}<div className="inspector-meta"><span><CalendarDays size={15} /> Release</span><strong>{dateLabel(activeTask.scheduled_at, true)}</strong><span><Clock3 size={15} /> Deadline</span><strong className={effectiveStatus(activeTask) === 'overdue' ? 'danger-text' : ''}>{dateLabel(activeTask.deadline_at, true)}</strong><span><Target size={15} /> Priority</span><strong>{priorityLabel(activeTask.priority)}</strong>{director && <><span><Clock3 size={15} /> Assigned hours</span><strong>{directorTaskHours[activeTask.id] == null ? 'Not assigned' : directorTaskHours[activeTask.id] + ' hours'}</strong></>}{activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && <><span><Repeat size={15} /> Repeats</span><strong>{activeTask.repeat_unit === 'monthly' ? 'Monthly · day ' + (activeTask.repeat_day_one || keyFor(activeTask.scheduled_at).split('-')[2]) + ((activeTask.repeat_monthly_count || 1) === 2 ? ' & ' + activeTask.repeat_day_two : '') : 'Every ' + (activeTask.repeat_every || 1) + ' ' + (activeTask.repeat_unit === 'daily' ? 'day' : 'week') + ((activeTask.repeat_every || 1) > 1 ? 's' : '')}{activeTask.repeat_until ? ' · until ' + dateLabel(activeTask.repeat_until) : ' · ongoing'}</strong></>}</div>{director && <section className="inspector-hours-editor" aria-label="Manage assigned task hours">
           <div className="inspector-hours-copy"><strong>Assigned hours</strong><span>These hours are used when completed work is credited.</span></div>
           <div className="inspector-hours-controls">
             <input aria-label="Assigned hours" type="number" min="0.25" max="1000" step="0.25" inputMode="decimal" value={directorHourDraft} onChange={e => setDirectorHourDraft(e.target.value)} placeholder="Enter hours" />
             <button type="button" className="button button-dark" onClick={() => void saveDirectorTaskHours()} disabled={savingDirectorHours}>{savingDirectorHours ? 'Saving…' : 'Save hours'}</button>
           </div>
           <small>Leave the field empty and save to remove the assigned hours.</small>
-        </section>}{(director || new Date(activeTask.scheduled_at).getTime() <= Date.now()) && activeTask.status !== 'completed' && activeTask.status !== 'cancelled' && <div className="inspector-actions">{director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void startTaskNow(activeTask)}><Clock3 size={15} /> Start now</button>}{!director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}>Start task</button>}<button className="button button-dark" onClick={() => void setStatus(activeTask, 'completed')}><Check size={15} /> Mark complete</button></div>}{director && activeTask.status === 'completed' && <div className="inspector-actions"><button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}><Repeat size={15} /> Reopen task</button></div>}{director && <div className="task-director-actions">{!activeTask.recurrence_parent_id && (!activeTask.repeat_unit || activeTask.repeat_unit === 'none') && activeTask.status !== 'cancelled' && activeTask.status !== 'archived' && <button className="edit-task-link repeat-task-action" onClick={() => startRepeatingTask(activeTask)}><Repeat size={14} /> Make repetitive</button>}<button className="edit-task-link" onClick={() => startEdit(activeTask)}>Edit task <ArrowRight size={14} /></button><button className="delete-task-link" onClick={() => setTaskPendingDelete(activeTask)}><X size={14} /> Delete task</button></div>}{director && activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && !activeTask.recurrence_parent_id && <button className="button button-light schedule-stop-button" onClick={() => void dismantleSchedule(activeTask)}><X size={15} /> Dismantle schedule</button>}<div className="comments-heading"><MessageCircle size={16} /><strong>Team conversation</strong><span>{filteredComments.length}</span></div><div className="comment-list">{filteredComments.map(c => <div className="comment" key={c.id}><div className="comment-avatar">{(c.author_name || 'E').slice(0, 1)}</div><div><strong>{c.author_name || 'Ediova team'}</strong><small>{dateLabel(c.created_at, true)}</small><p>{c.body}</p></div></div>)}{filteredComments.length === 0 && <p className="muted-copy">No comments yet. Leave the first helpful note.</p>}</div><form className="comment-form" onSubmit={addComment}><input value={commentDraft} onChange={e => setCommentDraft(e.target.value)} placeholder="Add a comment…" maxLength={4000} required /><button aria-label="Send comment"><ArrowRight size={16} /></button></form></> : <div className="inspector-empty"><div className="empty-icon"><MessageCircle size={22} /></div><h3>Select a task</h3><p>Open any task to view its brief, dates, resource links and team conversation.</p></div>}</aside>
+        </section>}{!activeTask.dropped_at && (director || new Date(activeTask.scheduled_at).getTime() <= Date.now()) && activeTask.status !== 'completed' && activeTask.status !== 'cancelled' && <div className="inspector-actions">{director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void startTaskNow(activeTask)}><Clock3 size={15} /> Start now</button>}{!director && activeTask.status !== 'in_progress' && <button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}>Start task</button>}<button className="button button-dark" onClick={() => void setStatus(activeTask, 'completed')}><Check size={15} /> Mark complete</button></div>}{director && activeTask.status === 'completed' && !activeTask.dropped_at && <div className="inspector-actions"><button className="button button-light" onClick={() => void setStatus(activeTask, 'in_progress')}><Repeat size={15} /> Reopen task</button></div>}{director && <div className="task-director-actions">{!activeTask.dropped_at && !activeTask.recurrence_parent_id && (!activeTask.repeat_unit || activeTask.repeat_unit === 'none') && activeTask.status !== 'cancelled' && activeTask.status !== 'archived' && <button className="edit-task-link repeat-task-action" onClick={() => startRepeatingTask(activeTask)}><Repeat size={14} /> Make repetitive</button>}<button className="edit-task-link" onClick={() => startEdit(activeTask)}>{activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && !activeTask.recurrence_parent_id ? 'Edit schedule' : 'Edit task'} <ArrowRight size={14} /></button>{activeTask.dropped_at ? <button className="edit-task-link repeat-task-action" onClick={() => void restoreDroppedTask(activeTask)}><Check size={14} /> Restore task</button> : <button className="edit-task-link repeat-task-action" onClick={() => void dropTask(activeTask)}><X size={14} /> Drop this task · exclude from metrics</button>}{canDeleteTask(activeTask) && <button className="delete-task-link" onClick={() => setTaskPendingDelete(activeTask)}><Trash2 size={14} /> Delete task</button>}</div>}{!director && canDeleteTask(activeTask) && <div className="task-director-actions"><button className="delete-task-link" onClick={() => setTaskPendingDelete(activeTask)}><Trash2 size={14} /> Delete completed task</button></div>}{director && activeTask.repeat_unit && activeTask.repeat_unit !== 'none' && !activeTask.recurrence_parent_id && <button className="button button-light schedule-stop-button" onClick={() => void dismantleSchedule(activeTask)}><X size={15} /> Dismantle schedule</button>}<div className="comments-heading"><MessageCircle size={16} /><strong>Team conversation</strong><span>{filteredComments.length}</span></div><div className="comment-list">{filteredComments.map(c => <div className="comment" key={c.id}><div className="comment-avatar">{(c.author_name || 'E').slice(0, 1)}</div><div><strong>{c.author_name || 'Ediova team'}</strong><small>{dateLabel(c.created_at, true)}</small><p>{c.body}</p></div></div>)}{filteredComments.length === 0 && <p className="muted-copy">No comments yet. Leave the first helpful note.</p>}</div><form className="comment-form" onSubmit={addComment}><input value={commentDraft} onChange={e => setCommentDraft(e.target.value)} placeholder="Add a comment…" maxLength={4000} required /><button aria-label="Send comment"><ArrowRight size={16} /></button></form></> : <div className="inspector-empty"><div className="empty-icon"><MessageCircle size={22} /></div><h3>Select a task</h3><p>Open any task to view its brief, dates, resource links and team conversation.</p></div>}</aside>
       </div>}
       {view === 'performance' && <section className="performance-page">
         <div className="performance-heading"><span className="eyebrow">PROGRESS, MADE VISIBLE</span><h2>{director ? 'Manager performance.' : 'Your performance.'}</h2><p>Monthly task completions and credited hours update automatically when completed work is recorded.{director ? ' Assigned hours can be managed from each task detail.' : ''}</p></div>
@@ -1088,6 +1182,40 @@ export default function App() {
             <p className="performance-note">{row.delayed_tasks ? row.delayed_tasks + ' task(s) are overdue or were completed late.' : 'No late tasks recorded.'} Scores still deduct 10 points per full day late.</p>
           </article>;
         })}{performanceRows.filter(row => director || row.manager_id === profile?.id).length === 0 && <div className="empty-state"><h3>Performance data is loading.</h3><p>Assign tasks and record completions to build the score.</p></div>}</div>
+      </section>}
+      {view === 'scheduled' && director && <section className="scheduled-page">
+        <div className="scheduled-page-heading"><div><span className="eyebrow">MANAGING DIRECTOR · SERIES CONTROL</span><h2>Planned and repeating tasks</h2><p>Edit one series once to update its future pending occurrences. Completed and in-progress tasks remain unchanged.</p></div><button className="button button-dark" onClick={startPlannedRepeatTask}><Plus size={15} /> New planned repeated task</button></div>
+        <div className="scheduled-series-list">
+          {recurringSeries.map(series => {
+            const children = seriesChildren(series.id).sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+            const upcoming = children.filter(item => item.status !== 'completed' && item.status !== 'cancelled' && item.status !== 'archived' && !item.dropped_at && new Date(item.scheduled_at).getTime() >= Date.now());
+            const completedCount = children.filter(item => item.status === 'completed' && !item.dropped_at).length;
+            const next = upcoming[0];
+            const assigneeName = team.find(person => person.id === series.assignee_id)?.full_name || 'Unassigned';
+            const repeatLabel = series.repeat_unit === 'monthly'
+              ? 'Monthly · day ' + (series.repeat_day_one || Number(keyFor(series.scheduled_at).slice(8, 10))) + ((series.repeat_monthly_count || 1) === 2 ? ' & ' + series.repeat_day_two : '')
+              : series.repeat_unit === 'weekly'
+                ? 'Weekly · ' + (series.repeat_weekdays || []).map(day => ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][day - 1]).join(', ')
+                : 'Every ' + (series.repeat_every || 1) + ' ' + (series.repeat_unit === 'daily' ? 'day' : 'week') + ((series.repeat_every || 1) > 1 ? 's' : '');
+            return <article className="scheduled-series-card" key={series.id}>
+              <div className="scheduled-series-top"><div><span className="eyebrow">{repeatLabel.toUpperCase()}</span><h3>{series.title}</h3><p>Assigned to {assigneeName} · starts {dateLabel(series.scheduled_at, true)} · deadline {dateLabel(series.deadline_at, true)}</p></div><span className={series.dropped_at ? 'scheduled-series-state dropped' : 'scheduled-series-state'}>{series.dropped_at ? 'Source task dropped' : 'Active series'}</span></div>
+              {series.dropped_at && <p className="scheduled-series-note">The original task was removed from credited work. The schedule template remains active, so other and future occurrences continue.</p>}
+              <div className="scheduled-series-metrics"><div><strong>{children.length}</strong><span>Linked occurrences</span></div><div><strong>{completedCount}</strong><span>Completed</span></div><div><strong>{upcoming.length}</strong><span>Upcoming</span></div><div><strong>{directorTaskHours[series.id] == null ? '—' : directorTaskHours[series.id] + ' hrs'}</strong><span>Planned hours / task</span></div></div>
+              {next && <div className="scheduled-series-next"><Clock3 size={14} /><span>Next occurrence: <strong>{dateLabel(next.scheduled_at, true)}</strong> · due {dateLabel(next.deadline_at, true)}</span></div>}
+              {children.length > 0 && <div className="scheduled-occurrences"><span className="scheduled-occurrences-label">LINKED TASKS · OPEN ONE TO DROP OR REVIEW IT</span>{children.slice(0, 5).map(child => <button type="button" className="scheduled-occurrence-row" key={child.id} onClick={() => openTask(child)}><span>{dateLabel(child.scheduled_at, true)}</span><strong>{child.title}</strong><StatusPill value={child.dropped_at ? 'dropped' : effectiveStatus(child)} /><ArrowRight size={14} /></button>)}{children.length > 5 && <span className="scheduled-occurrences-more">Showing the first five linked tasks. All task occurrences remain available in Calendar.</span>}</div>}
+              <div className="scheduled-series-actions"><button className="button button-dark" onClick={() => { startEdit(series); notify('Series editor opened. Changes sync to future pending occurrences only; completed and in-progress tasks are preserved.'); }}><Repeat size={14} /> Edit entire series</button><button className="button button-light" onClick={() => openTask(series)}>Series details</button><button className="button button-light" onClick={() => void dismantleSchedule(series)}><X size={14} /> Stop schedule</button></div>
+            </article>;
+          })}
+          {recurringSeries.length === 0 && <div className="empty-state"><div className="empty-icon"><Repeat size={22} /></div><h3>No repeating tasks yet.</h3><p>Create a planned repeated task and manage its future occurrences from this page.</p><button className="button button-dark" onClick={startPlannedRepeatTask}><Plus size={15} /> Add planned repeated task</button></div>}
+        </div>
+        {droppedTasks.length > 0 && <section className="scheduled-dropped-register">
+          <div className="scheduled-dropped-heading"><div><span className="eyebrow">MANAGING DIRECTOR ONLY</span><h3>Dropped tasks · excluded from metrics</h3><p>These tasks no longer contribute hours, delays, penalties or payments. Other linked scheduled tasks remain unchanged.</p></div><span>{droppedTasks.length} items</span></div>
+          <div className="scheduled-dropped-list">{droppedTasks.map(task => <article className="scheduled-dropped-row" key={task.id}>
+            <div><strong>{task.title}</strong><small>{dateLabel(task.scheduled_at, true)} · {task.drop_reason || 'Removed from credited workload'}</small></div>
+            <button type="button" className="button button-light" onClick={() => openTask(task)}>Details</button>
+            <button type="button" className="button button-dark" onClick={() => void restoreDroppedTask(task)}><Check size={14} /> Restore</button>
+          </article>)}</div>
+        </section>}
       </section>}
       {view === 'calendar' && <section className="calendar-panel"><div className="calendar-heading"><div><span className="eyebrow">MAKE TIME FOR THE WORK</span><h2>{monthTitle}</h2></div><div className="calendar-paging"><button className="icon-button" onClick={() => monthShift(-1)} aria-label="Previous month"><ChevronLeft /></button><button className="icon-button" onClick={() => setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button><button className="icon-button" onClick={() => monthShift(1)} aria-label="Next month"><ChevronRight /></button></div></div><div className="calendar-week">{['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => <span key={d}>{d}</span>)}</div><div className="calendar-grid">{calendarCells.map((day, i) => { const key = day ? calendarMonth.getFullYear() + '-' + String(calendarMonth.getMonth() + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0') : 'blank-' + i; const items = day ? (calendarEventsByDate[key] || []) : []; return <div className={'calendar-day' + (!day ? ' blank' : '') + (day && key === todayKey() ? ' is-today' : '')} key={key}><span className="calendar-day-num">{day || ''}</span>{items.slice(0, 3).map(item => <button key={item.id} className={'calendar-event ' + (item.isVirtual ? 'event-pending event-series-preview' : effectiveStatus(item.task) === 'overdue' ? 'event-late' : 'event-' + item.task.status)} onClick={() => openTask(item.task)} title={item.isVirtual ? item.task.title + ' · repeating schedule' : item.task.title}>{item.task.title}{item.isVirtual ? ' ↻' : ''}</button>)}{items.length > 3 && <small>+{items.length - 3} more</small>}</div>; })}</div></section>}
       {view === 'templates' && <section className="template-library">
@@ -1172,7 +1300,7 @@ export default function App() {
             {draft.repeatUnit !== 'none' && <p className="recurrence-note">{draft.repeatUnit === 'weekly' ? 'Select one or more weekdays. The first task is aligned to the next selected day; repeats default to 12:00 AM Pakistan time.' : 'Repeat occurrences preserve the task time and deadline window.'} {draft.repeatUntil ? 'This series ends on the selected date.' : 'No end date is set, so this series repeats indefinitely.'} Future dates appear in Calendar as you navigate ahead; each occurrence becomes a regular task as its month arrives.</p>}
           </div>}
           <div className="modal-actions"><button type="button" className="button button-light" onClick={() => setComposer(false)}>Cancel</button><button className="button button-dark"><Check size={16} /> {editing ? 'Save changes' : 'Schedule task'}</button></div><p className="form-time-note">All times are interpreted as Pakistan Standard Time (UTC+05:00). Tasks automatically start at their scheduled release time; use Start now only to release a task early.</p></form></div>}
-      {taskPendingDelete && <div className="confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTaskPendingDelete(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title"><span className="eyebrow">MANAGING DIRECTOR ACTION</span><h2 id="delete-task-title">Delete this task?</h2><p><strong>{taskPendingDelete.title}</strong> will be permanently removed, including its comments, task history, recurrence instances and private hour assignment. This cannot be undone.</p><div className="confirm-actions"><button type="button" className="button button-light" onClick={() => setTaskPendingDelete(null)}>Keep task</button><button type="button" className="button button-danger" onClick={() => void deleteTask(taskPendingDelete)}>Delete permanently</button></div></section></div>}
+      {taskPendingDelete && <div className="confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setTaskPendingDelete(null); }}><section className="confirm-modal task-delete-scope-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title"><span className="eyebrow">TASK ADMINISTRATION</span><h2 id="delete-task-title">{director ? (pendingDeleteHasSchedule ? 'Delete task or linked schedule?' : 'Delete this task?') : 'Delete completed task?'}</h2><p><strong>{taskPendingDelete.title}</strong> {director ? 'will be removed without changing linked tasks unless you choose the entire linked schedule below.' : 'will be permanently removed from your completed work only. Other scheduled and linked tasks will remain untouched.'}</p>{director && pendingDeleteHasSchedule && <div className="task-delete-scope-options"><div><strong>Delete only this task</strong><span>Keep all other existing occurrences. If this is the repeating source, its schedule template remains active.</span></div><div><strong>Delete the entire linked schedule</strong><span>Remove the source task and every existing linked occurrence, including completed tasks.</span></div></div>}<div className="confirm-actions task-delete-scope-actions"><button type="button" className="button button-light" onClick={() => setTaskPendingDelete(null)}>Cancel</button><button type="button" className="button button-danger" onClick={() => void deleteTask(taskPendingDelete, false)}>{director ? 'Delete only this task' : 'Delete completed task'}</button>{director && pendingDeleteHasSchedule && <button type="button" className="button button-danger task-delete-all-button" onClick={() => void deleteTask(taskPendingDelete, true)}>Delete entire linked schedule</button>}</div></section></div>}
       {notice && <div className="toast" role="status">{notice}</div>}
       <nav className="mobile-workspace-nav" aria-label="Workspace navigation">
         {mobilePrimaryNavViews.map(item => {
@@ -1215,7 +1343,7 @@ function TaskCard({ task, selected, director, colorIndex, onOpen, onStatus, onEd
   </article>;
 }
 function StatusPill({ value }: { value: string }) {
-  const label = ({ pending: 'To do', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled', archived: 'Archived', overdue: 'Overdue' } as Record<string, string>)[value] || value;
+  const label = ({ pending: 'To do', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled', archived: 'Archived', overdue: 'Overdue', dropped: 'Dropped · excluded' } as Record<string, string>)[value] || value;
   return <span className={'status-pill s-' + value}>{label}</span>;
 }
 function InfoPage({ icon, eyebrow, title, body, list }: { icon: React.ReactNode; eyebrow: string; title: string; body: string; list: string[] }) {

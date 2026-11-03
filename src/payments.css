@@ -317,3 +317,29 @@
   .payment-modal{padding:15px}
   .payment-modal-actions{grid-template-columns:minmax(0,1fr)}
 }
+
+
+/* Required payment opt-out acknowledgement for each unfinished assigned task. */
+.payment-unfinished-panel{display:grid;gap:10px;margin:14px 0;padding:13px;border:1px solid #ead9ce;border-radius:10px;background:#fbf6f1}
+.payment-unfinished-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.payment-unfinished-heading strong{display:block;color:#4b4038;font-size:12px}
+.payment-unfinished-heading p{margin:4px 0 0;color:#8c8178;font-size:10px;line-height:1.6}
+.payment-unfinished-count{flex:0 0 auto;padding:5px 8px;border-radius:20px;background:#f0e2d8;color:#9b5e49;font-size:9px;font-weight:750}
+.payment-unfinished-list{display:grid;gap:7px}
+.payment-unfinished-item{display:flex;align-items:flex-start;gap:9px;padding:9px;border:1px solid #eee2d9;border-radius:8px;background:#fffdfa;cursor:pointer}
+.payment-unfinished-item input{flex:0 0 auto;width:16px;height:16px;margin:1px 0 0;accent-color:#ad6c53}
+.payment-unfinished-item>span{display:grid;gap:3px;min-width:0}
+.payment-unfinished-item strong{color:#51463e;font-size:10px;line-height:1.4}
+.payment-unfinished-item small{color:#92877d;font-size:9px;line-height:1.5}
+.payment-unfinished-item b{margin-left:auto;flex:0 0 auto;color:#a54e3d;font-size:10px;white-space:nowrap}
+.payment-unfinished-total{display:flex;justify-content:space-between;gap:10px;padding-top:9px;border-top:1px solid #eaded5;color:#786b62;font-size:10px}
+.payment-unfinished-total strong{color:#a54e3d;font-size:11px}
+.payment-unfinished-required{color:#a54e3d;font-size:9px;font-weight:700;line-height:1.5}
+.payment-modal-actions .payment-button:disabled{opacity:.55;cursor:not-allowed}
+
+
+.payment-unfinished-preview-line{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:9px 0;color:#8d7061;font-size:10px}
+.payment-unfinished-preview-line strong{flex:0 0 auto;color:#a65640;font-size:10px}
+
+.payment-unfinished-final-total{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0 2px;color:#6f6258;font-size:10px;font-weight:700}
+.payment-unfinished-final-total strong{color:#3d6544;font-size:12px}

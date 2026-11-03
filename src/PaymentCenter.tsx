@@ -5,14 +5,16 @@ import { supabase } from './lib/supabase';
 type Role = 'manager' | 'managing_director';
 type PaymentProfile = { id: string; full_name: string; role: Role };
 type PaymentSettings = { hourly_rate_usd: number | string; late_deduction_usd: number | string };
-type WorkItem = { task_id: string; title: string; completed_at: string | null; hours: number | string };
+type WorkItem = { task_id: string; title: string; completed_at: string | null; schedule_at?: string; hours: number | string };
 type DelayItem = { task_id: string; title: string; deadline_at: string; completed_at: string | null; delay_hours: number | string };
+type UnfinishedItem = { task_id: string; title: string; status: string; schedule_at: string; deadline_at: string };
 type PaymentPreview = {
   manager_id: string; manager_name: string; month_start: string; month_end: string;
   completed_tasks: number; completed_hours: number | string; delayed_tasks: number; performance_score: number;
   hourly_rate_usd: number | string; late_deduction_usd: number | string;
   gross_amount_usd: number | string; deductions_usd: number | string; net_amount_usd: number | string;
   work_breakdown: WorkItem[]; delay_breakdown: DelayItem[];
+  unfinished_tasks: number; unfinished_deduction_usd: number | string; unfinished_breakdown: UnfinishedItem[];
 };
 type PaymentRequest = {
   id: string; manager_id: string; manager_name_snapshot: string; month_start: string; invoice_number: string;
@@ -25,6 +27,7 @@ type PaymentRequest = {
   director_payment_set_at?: string | null; director_payment_set_by?: string | null;
   bank_name: string; bank_account_holder: string; bank_account_number: string;
   work_breakdown: WorkItem[]; delay_breakdown: DelayItem[];
+  unfinished_tasks_count?: number; unfinished_deduction_usd?: number | string; unfinished_breakdown?: UnfinishedItem[];
   revision_note: string | null; dispute_note: string | null; requested_at: string;
   reviewed_at: string | null; paid_at: string | null; updated_at?: string | null;
 };
@@ -106,6 +109,9 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
   const invoiceNumber = request?.invoice_number || 'Generated when payment is requested';
   const work = (request?.work_breakdown || preview?.work_breakdown || []) as WorkItem[];
   const delays = (request?.delay_breakdown || preview?.delay_breakdown || []) as DelayItem[];
+  const unfinished = (request?.unfinished_breakdown || preview?.unfinished_breakdown || []) as UnfinishedItem[];
+  const unfinishedDeduction = Number(request?.unfinished_deduction_usd ?? preview?.unfinished_deduction_usd ?? 0);
+  const lateDeductionTotal = Number(data.delayed_tasks || 0) * Number(data.late_deduction_usd || 0);
   const bankName = request?.bank_name || '';
   const bankHolder = request?.bank_account_holder || '';
   const bankNumber = request?.bank_account_number || '';
@@ -131,7 +137,8 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
       <thead><tr><th>DESCRIPTION</th><th>QUANTITY</th><th>RATE</th><th className="payment-right">AMOUNT</th></tr></thead>
       <tbody>
         <tr><td><strong>Completed and credited work</strong><small>{quantity(data.completed_tasks)} completed task(s)</small></td><td>{quantity(data.completed_hours)} hrs</td><td>{amount(data.hourly_rate_usd)} / hr</td><td className="payment-right">{amount(data.gross_amount_usd)}</td></tr>
-        <tr className="payment-deduction-row"><td><strong>Late-task deductions</strong><small>{quantity(data.delayed_tasks)} task(s) delayed by more than 24 hours</small></td><td>{quantity(data.delayed_tasks)} task(s)</td><td>{amount(data.late_deduction_usd)} / task</td><td className="payment-right">−{amount(data.deductions_usd)}</td></tr>
+        <tr className="payment-deduction-row"><td><strong>Late-task deductions</strong><small>{quantity(data.delayed_tasks)} task(s) delayed by more than 24 hours</small></td><td>{quantity(data.delayed_tasks)} task(s)</td><td>{amount(data.late_deduction_usd)} / task</td><td className="payment-right">−{amount(lateDeductionTotal)}</td></tr>
+        {unfinished.length > 0 && <tr className="payment-deduction-row"><td><strong>Unfinished-task opt-outs</strong><small>Tasks explicitly excluded from this payment request</small></td><td>{quantity(unfinished.length)} task(s)</td><td>$1.00 / task</td><td className="payment-right">−{amount(unfinishedDeduction)}</td></tr>}
         <tr><td><strong>VAT</strong><small>Fixed at 0.00%</small></td><td>—</td><td>0.00%</td><td className="payment-right">{amount(request?.vat_amount_usd ?? 0)}</td></tr>
       </tbody>
     </table></div>
@@ -145,7 +152,8 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
           {request?.director_payment_reason && <p><b>Director's reason:</b> {request.director_payment_reason}</p>}
         </div>}
         <div><span>Gross amount · USD</span><strong>{amount(data.gross_amount_usd)}</strong></div>
-        <div><span>Late-task deductions · USD</span><strong>−{amount(data.deductions_usd)}</strong></div>
+        <div><span>Late-task deductions · USD</span><strong>−{amount(lateDeductionTotal)}</strong></div>
+        {unfinished.length > 0 && <div><span>Unfinished-task opt-outs · USD</span><strong>−{amount(unfinishedDeduction)}</strong></div>}
         <div><span>VAT · 0.00% · USD</span><strong>{amount(request?.vat_amount_usd ?? 0)}</strong></div>
         <div className={directorPayoutAmount != null ? 'payment-net-total payment-system-reference-total' : 'payment-net-total'}>
           <span>{directorPayoutAmount != null ? 'SYSTEM-SUGGESTED PAYMENT · USD' : 'SYSTEM-SUGGESTED PAYMENT'}</span>
@@ -156,11 +164,12 @@ function InvoiceDocument({ request, preview, managerName, issuedAt }: { request?
     </div>
     <section className="payment-invoice-breakdown">
       <div className="payment-invoice-section-title"><div><span className="payment-eyebrow">01 · DELIVERY RECORD</span><h3>Completed work.</h3></div><span>{work.length} entries</span></div>
-      {work.length ? <div className="payment-work-list">{work.map((item, index) => <div className="payment-work-row" key={item.task_id || index}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>Completed {formatDateTime(item.completed_at)}</small></div><b>{quantity(item.hours)} hrs</b></div>)}</div> : <p className="payment-muted">No completed tasks were recorded for this month.</p>}
-      <div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">02 · TIMELINE REVIEW</span><h3>Delayed tasks.</h3></div><span>{delays.length} entries</span></div>
+      {work.length ? <div className="payment-work-list">{work.map((item, index) => <div className="payment-work-row" key={item.task_id || index}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>Assigned {formatDateTime(item.schedule_at || item.completed_at)} · completed {formatDateTime(item.completed_at)}</small></div><b>{quantity(item.hours)} hrs</b></div>)}</div> : <p className="payment-muted">No completed tasks were recorded for this month.</p>}
+      {unfinished.length > 0 && <><div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">02 · PAYMENT OPT-OUTS</span><h3>Unfinished tasks excluded.</h3></div><span>{unfinished.length} entries</span></div><div className="payment-work-list">{unfinished.map((item, index) => <div className="payment-work-row payment-delay-row" key={item.task_id}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>{item.status === 'in_progress' ? 'In progress' : 'Not started'} · Due {formatDateTime(item.deadline_at)}</small></div><b>−$1.00</b></div>)}</div></>}
+      <div className="payment-invoice-section-title payment-delayed-title"><div><span className="payment-eyebrow">03 · TIMELINE REVIEW</span><h3>Delayed tasks.</h3></div><span>{delays.length} entries</span></div>
       {delays.length ? <div className="payment-work-list">{delays.map((item, index) => <div className="payment-work-row payment-delay-row" key={item.task_id || index}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.title}</strong><small>Deadline {formatDateTime(item.deadline_at)} · {quantity(item.delay_hours)} hours late</small></div><b>−{amount(data.late_deduction_usd)}</b></div>)}</div> : <p className="payment-muted">No task exceeded the 24-hour delay threshold.</p>}
     </section>
-    <div className="payment-invoice-footer"><div><strong>Thank you for your work.</strong><p>This statement preserves the original USD work calculation and displays the Managing Director’s approved PKR payout as the primary amount when set. Payment is recorded as paid only after the transfer has been sent.</p></div><div className="payment-invoice-seal"><BadgeCheck size={24} /><span>EDI OVA<br />ACCOUNTS</span></div></div>
+    <div className="payment-invoice-footer"><div><strong>Thank you for your work.</strong><p>This statement assigns completed work to the month the task was scheduled. Tasks opted out of payment are listed separately and deducted at $1.00 each. The Managing Director’s approved PKR payout is shown as primary when set.</p></div><div className="payment-invoice-seal"><BadgeCheck size={24} /><span>EDI OVA<br />ACCOUNTS</span></div></div>
     <div className="payment-invoice-footnote"><span>EDI OVA INC. · INTERNAL PAYMENT DOCUMENT</span><span>{request?.invoice_number || 'PREVIEW'} · {formatMonth(start)}</span></div>
   </article>;
 }
@@ -187,6 +196,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [modal, setModal] = useState<'request' | 'dispute' | 'revision' | 'payment' | 'approve' | null>(null);
+  const [optedOutTaskIds, setOptedOutTaskIds] = useState<string[]>([]);
   const [noteDraft, setNoteDraft] = useState('');
   const [paidAmountDraft, setPaidAmountDraft] = useState('');
   const [paidCurrencyDraft, setPaidCurrencyDraft] = useState<'USD' | 'PKR'>('PKR');
@@ -201,6 +211,10 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
   const pendingDirector = requests.filter(request => ['requested', 'disputed', 'approved'].includes(request.status));
   const managerRequest = requests.find(request => request.manager_id === profile?.id && request.month_start === monthStart) || null;
   const historicalInvoice = requests.find(request => request.id === historicalInvoiceId && request.manager_id === profile?.id) || null;
+  const unfinishedTasks = preview?.unfinished_breakdown || [];
+  const allUnfinishedTasksOptedOut = unfinishedTasks.every(task => optedOutTaskIds.includes(task.task_id)) && optedOutTaskIds.length === unfinishedTasks.length;
+  const unfinishedOptOutTotal = Number(preview?.unfinished_deduction_usd || 0);
+  const estimatedPaymentAfterOptOut = Math.max(0, Number(preview?.net_amount_usd || 0) - optedOutTaskIds.length);
   const paymentAlertStorageKey = profile ? 'ediova-payment-alert-seen-v1:' + profile.id : '';
   const directorAlertSignature = director && pendingDirector.length
     ? 'director:' + pendingDirector.map(request => [
@@ -300,7 +314,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
       if (!director && profile.role === 'manager') {
         const bankResult = await client.from('manager_bank_details').select('bank_name,account_holder_name,account_number').eq('profile_id', profile.id).maybeSingle();
         if (alive && !bankDirty && bankResult.data) setBank(bankResult.data as BankForm);
-        const previewResult = await client.rpc('get_manager_payment_preview', { p_month: monthStart });
+        const previewResult = await client.rpc('get_manager_payment_preview_v2', { p_month: monthStart });
         if (alive) {
           if (previewResult.error) {
             setPreview(null);
@@ -324,12 +338,17 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
       notify('Please complete all three bank details before requesting payment.');
       return;
     }
+    if (!allUnfinishedTasksOptedOut) {
+      notify('Complete every task assigned this month, or select each unfinished task to opt out at $1 per task.');
+      return;
+    }
     setSubmitting(true);
-    const { data, error } = await supabase.rpc('create_manager_payment_request', {
+    const { data, error } = await supabase.rpc('create_manager_payment_request_v2', {
       p_month: monthStart,
       p_bank_name: bank.bank_name.trim(),
       p_account_holder: bank.account_holder_name.trim(),
-      p_account_number: bank.account_number.trim()
+      p_account_number: bank.account_number.trim(),
+      p_opted_out_task_ids: optedOutTaskIds
     });
     setSubmitting(false);
     if (error) { notify('Payment request could not be submitted: ' + error.message); return; }
@@ -384,12 +403,17 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
       notify('Please complete all bank details before resubmitting.');
       return;
     }
+    if (!allUnfinishedTasksOptedOut) {
+      notify('Complete every task assigned this month, or select each unfinished task to opt out at $1 per task.');
+      return;
+    }
     setBusyAction(true);
-    const { error } = await supabase.rpc('resubmit_manager_payment_request', {
+    const { error } = await supabase.rpc('resubmit_manager_payment_request_v2', {
       p_request_id: managerRequest.id,
       p_bank_name: bank.bank_name.trim(),
       p_account_holder: bank.account_holder_name.trim(),
-      p_account_number: bank.account_number.trim()
+      p_account_number: bank.account_number.trim(),
+      p_opted_out_task_ids: optedOutTaskIds
     });
     setBusyAction(false);
     if (error) { notify('The revised request could not be submitted: ' + error.message); return; }
@@ -398,6 +422,17 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
     notify('Your revised payment request has been sent.');
     await refreshAfterAction();
   }
+  function openRequestModal() {
+    setOptedOutTaskIds([]);
+    setModal('request');
+  }
+
+  function toggleTaskOptOut(taskId: string, checked: boolean) {
+    setOptedOutTaskIds(current => checked
+      ? [...new Set([...current, taskId])]
+      : current.filter(id => id !== taskId));
+  }
+
   async function disputeRequest(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !managerRequest) return;
@@ -580,7 +615,7 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
             {managerRequest.dispute_note && <div className="payment-inline-note"><AlertCircle size={16} /><div><strong>Your dispute</strong><p>{managerRequest.dispute_note}</p></div></div>}
             <div className="payment-invoice-actions"><button type="button" className="payment-button payment-button-primary" onClick={() => setHistoricalInvoiceId(historicalInvoiceId === managerRequest.id ? '' : managerRequest.id)}><FileText size={15} /> {historicalInvoiceId === managerRequest.id ? 'Hide full invoice' : 'View full invoice'}</button>
               {historicalInvoiceId === managerRequest.id && <button type="button" className="payment-button payment-button-light" onClick={() => window.print()}><Printer size={15} /> Print invoice</button>}
-              {managerRequest.status === 'revision_requested' && <button type="button" className="payment-button payment-button-primary" onClick={() => { setBankDirty(false); setModal('request'); }}>Update details &amp; resubmit</button>}
+              {managerRequest.status === 'revision_requested' && <button type="button" className="payment-button payment-button-primary" onClick={() => { setBankDirty(false); openRequestModal(); }}>Update details &amp; resubmit</button>}
               {['requested','approved'].includes(managerRequest.status) && <button type="button" className="payment-button payment-button-light" onClick={() => { setNoteDraft(''); setModal('dispute'); }}>Raise a dispute</button>}
             </div>
             {historicalInvoiceId === managerRequest.id && <><InvoiceDocument request={managerRequest} managerName={profile.full_name} /><div className="payment-history-panel"><div className="payment-invoice-section-title"><div><span className="payment-eyebrow">AUDIT TRAIL</span><h3>Request history.</h3></div></div>{events.filter(event => event.request_id === managerRequest.id).map(event => <EventLabel event={event} key={event.id} />)}</div></>}
@@ -589,8 +624,8 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
             <div className="payment-period-card"><div><span className="payment-eyebrow">READY FOR YOUR REQUEST</span><h3>{formatMonth(monthStart)}</h3><p>{monthReopenAvailable ? 'The Managing Director reopened this month. You may submit one replacement request; it will lock again after submission.' : 'Payment requests open from the first day of the following month.'}</p></div><span className="payment-period-icon"><CalendarDays size={22} /></span></div>
             {monthAlreadySubmitted && !managerRequest ? <div className="payment-empty"><BadgeCheck size={20} /><strong>This month’s payment request has already been submitted.</strong><p>The Director removed the invoice record, but this month remains locked to prevent a duplicate request. Please contact the Managing Director if the invoice needs to be restored.</p></div> : preview ? <div className="payment-estimate-card"><div className="payment-estimate-top"><div><span className="payment-eyebrow">YOUR ESTIMATED PAYMENT</span><h3>{amount(preview.net_amount_usd)}</h3><small>Subject to the Managing Director’s review</small></div><div className="payment-estimate-icon"><CircleDollarSign size={22} /></div></div>
               <div className="payment-estimate-stats"><div><span>Credited hours</span><strong>{quantity(preview.completed_hours)} hrs</strong></div><div><span>Tasks completed</span><strong>{quantity(preview.completed_tasks)}</strong></div><div><span>Late tasks</span><strong>{quantity(preview.delayed_tasks)}</strong></div><div><span>Performance</span><strong>{quantity(preview.performance_score)}/100</strong></div></div>
-              <div className="payment-calculation"><div><span>{quantity(preview.completed_hours)} hours × {amount(preview.hourly_rate_usd)}</span><strong>{amount(preview.gross_amount_usd)}</strong></div><div><span>{quantity(preview.delayed_tasks)} late tasks × {amount(preview.late_deduction_usd)}</span><strong>−{amount(preview.deductions_usd)}</strong></div><div><span>VAT · 0.00%</span><strong>{amount(0)}</strong></div><div className="payment-calculation-total"><span>System-suggested payment</span><strong>{amount(preview.net_amount_usd)}</strong></div></div>
-              <button type="button" className="payment-button payment-button-primary payment-request-cta" onClick={() => setModal('request')}><Wallet size={16} /> Request payment <ArrowRight size={16} /></button>
+              <div className="payment-calculation"><div><span>{quantity(preview.completed_hours)} hours × {amount(preview.hourly_rate_usd)}</span><strong>{amount(preview.gross_amount_usd)}</strong></div><div><span>{quantity(preview.delayed_tasks)} late tasks × {amount(preview.late_deduction_usd)}</span><strong>−{amount(preview.deductions_usd)}</strong></div>{unfinishedTasks.length > 0 && <div className="payment-unfinished-preview-line"><span>{quantity(unfinishedTasks.length)} unfinished task(s) · optional opt-out at $1 each</span><strong>Up to −{amount(unfinishedOptOutTotal)}</strong></div>}<div><span>VAT · 0.00%</span><strong>{amount(0)}</strong></div><div className="payment-calculation-total"><span>Estimated payment before unfinished-task opt-outs</span><strong>{amount(preview.net_amount_usd)}</strong></div></div>
+              <button type="button" className="payment-button payment-button-primary payment-request-cta" onClick={openRequestModal}><Wallet size={16} /> Request payment <ArrowRight size={16} /></button>
             </div> : <div className="payment-empty"><AlertCircle size={20} /><strong>{previewError ? 'Monthly estimate is not available yet.' : 'Your estimate is being prepared.'}</strong><p>{previewError ? 'The payment period is the previous completed calendar month. The request becomes available from the first day of the new month.' : 'Complete and credited task hours will appear here.'}</p></div>}
             <div className="payment-bank-hint"><Banknote size={18} /><div><strong>Pakistani bank account</strong><p>When you request payment, add your bank name, account holder name, and account number. You can review the details on the invoice before submitting.</p></div></div>
           </>}
@@ -607,12 +642,13 @@ export default function PaymentCenter({ profile, active, dashboard, onOpen, noti
       <section className="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
         <div className="payment-modal-heading"><div><span className="payment-eyebrow">{modal === 'request' ? 'PAYMENT REQUEST' : modal === 'dispute' ? 'PAYMENT REVIEW' : modal === 'payment' ? 'RECORD BANK TRANSFER' : modal === 'approve' ? 'DIRECTOR FINAL PAYOUT' : 'MANAGING DIRECTOR REVIEW'}</span><h2 id="payment-modal-title">{modal === 'request' ? (managerRequest ? 'Update bank details.' : 'Request payment.') : modal === 'dispute' ? 'Raise a dispute.' : modal === 'payment' ? 'Record actual payment.' : modal === 'approve' ? 'Set the final PKR amount.' : 'Request a revision.'}</h2></div><button type="button" className="payment-icon-button" onClick={() => setModal(null)} aria-label="Close"><X size={17} /></button></div>
         {modal === 'request' ? <form onSubmit={managerRequest ? resubmitRequest : submitRequest}>
-          <p className="payment-modal-copy">The invoice will include your monthly completed hours, task details, late-task deductions, and bank information.</p>
+          <p className="payment-modal-copy">The invoice credits work to the month each task was assigned. Complete every unfinished task in that month, or opt out of each one below at $1.00 per task.</p>
+          {unfinishedTasks.length > 0 && <section className="payment-unfinished-panel" aria-label="Unfinished tasks requiring an opt-out decision"><div className="payment-unfinished-heading"><div><strong>Unfinished tasks in this assigned month</strong><p>Every task must be completed before requesting payment, or explicitly opted out below. Each opted-out task reduces this invoice by $1.00.</p></div><span className="payment-unfinished-count">{optedOutTaskIds.length}/{unfinishedTasks.length} selected</span></div><div className="payment-unfinished-list">{unfinishedTasks.map(task => <label className="payment-unfinished-item" key={task.task_id}><input type="checkbox" checked={optedOutTaskIds.includes(task.task_id)} onChange={event => toggleTaskOptOut(task.task_id, event.target.checked)} /><span><strong>{task.title}</strong><small>{task.status === 'in_progress' ? 'In progress' : 'Not started'} · Due {formatDateTime(task.deadline_at)}</small></span><b>−$1.00</b></label>)}</div><div className="payment-unfinished-total"><span>Opt-out deduction if submitted now</span><strong>−{amount(optedOutTaskIds.length)}</strong></div><div className="payment-unfinished-final-total"><span>Estimated payout after selected opt-outs</span><strong>{amount(estimatedPaymentAfterOptOut)}</strong></div>{!allUnfinishedTasksOptedOut && <p className="payment-unfinished-required">Select every unfinished task or complete it before this request can be submitted.</p>}</section>}
           <label>Bank name<input required maxLength={120} value={bank.bank_name} onChange={event => { setBank({ ...bank, bank_name: event.target.value }); setBankDirty(true); }} placeholder="e.g. Meezan Bank" /></label>
           <label>Account holder name<input required maxLength={160} value={bank.account_holder_name} onChange={event => { setBank({ ...bank, account_holder_name: event.target.value }); setBankDirty(true); }} placeholder="Full name as registered with the bank" /></label>
           <label>Bank account number<input required maxLength={80} value={bank.account_number} onChange={event => { setBank({ ...bank, account_number: event.target.value }); setBankDirty(true); }} placeholder="Enter your account number" /></label>
           <div className="payment-modal-safe"><LockKeyhole size={14} /><span>These details are saved securely to your Ediova profile and copied to this invoice.</span></div>
-          <div className="payment-modal-actions"><button type="button" className="payment-button payment-button-light" onClick={() => setModal(null)}>Cancel</button><button className="payment-button payment-button-primary" disabled={submitting || busyAction}>{submitting || busyAction ? 'Submitting…' : managerRequest ? 'Resubmit invoice' : 'Create invoice & request payment'} <ArrowRight size={15} /></button></div>
+          <div className="payment-modal-actions"><button type="button" className="payment-button payment-button-light" onClick={() => setModal(null)}>Cancel</button><button className="payment-button payment-button-primary" disabled={submitting || busyAction || !allUnfinishedTasksOptedOut}>{submitting || busyAction ? 'Submitting…' : managerRequest ? 'Resubmit invoice' : 'Create invoice & request payment'} <ArrowRight size={15} /></button></div>
         </form> : modal === 'dispute' ? <form onSubmit={disputeRequest}>
           <p className="payment-modal-copy">Explain which part of the invoice you believe needs a review. Your note will be added to the request history for the Managing Director.</p>
           <label>Reason for dispute<textarea required minLength={5} maxLength={1200} rows={4} value={noteDraft} onChange={event => setNoteDraft(event.target.value)} placeholder="Describe the hours, task record, or deduction you would like reviewed…" /></label>
